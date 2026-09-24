@@ -8,7 +8,7 @@ import imageio_ffmpeg
 
 
 def build_release():
-    is_win = os.name == "nt" or "win" in sys.platform.lower()
+    is_win = sys.platform.startswith("win") or (os.name == "nt")
     ffmpeg_src = imageio_ffmpeg.get_ffmpeg_exe()
     print(f"[*] Detected source FFmpeg at: {ffmpeg_src}")
 
@@ -76,7 +76,7 @@ def build_release():
             shutil.copy2(onefile_src, onefile_dst)
             print(f"[*] Successfully generated standalone EXE: {onefile_dst}")
 
-    print("\n[✔] Build completed successfully!")
+    print("\n[OK] Build completed successfully!")
 
 
 if __name__ == "__main__":
