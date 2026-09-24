@@ -9,6 +9,7 @@ class PresetMode(str, Enum):
     QUALITY_FIRST = "quality"        # Minimal visual loss, subtle acoustic & spatial perturbation
     BALANCED_REMIX = "balanced"      # High effectiveness: sync speed + zoom + audio pitch & EQ
     SMART_PIP = "pip"                # Picture-in-picture with blurred background
+    ECOMMERCE = "ecommerce"          # E-commerce platform (JD/PDD) anti-interception preset
     CUSTOM = "custom"                # Custom settings
 
 
@@ -16,6 +17,7 @@ PRESET_DESCRIPTIONS: Dict[PresetMode, str] = {
     PresetMode.QUALITY_FIRST: "【画质保真】轻量色彩调优 + 微变调 + 底噪混入 + 胶片微噪点（零观感破坏）",
     PresetMode.BALANCED_REMIX: "【强效去重】微平移微缩放 + 同步变速 1.018x + 音高微调 + 均衡重构（音画严格对齐）",
     PresetMode.SMART_PIP: "【智能画中画】90% 居中原画 + 动态高斯模糊背景 + 全面声学指纹重塑（强力变体）",
+    PresetMode.ECOMMERCE: "【电商专版】专克京东/拼多多初审 (底部字幕遮罩阻断OCR + 口播抗ASR变速微变调 + 4.5%边缘净空)",
     PresetMode.CUSTOM: "【自定义模式】自由勾选微调参数与强度",
 }
 
@@ -52,6 +54,22 @@ def apply_preset(
         builder.add_equalizer(low_gain_db=1.0, high_gain_db=-1.0)
         builder.add_noise_floor()
 
+    elif preset == PresetMode.ECOMMERCE:
+        # 1. 4.5% crop/zoom to eliminate edge watermarks and corner icons
+        builder.add_subtle_crop_zoom(zoom=1.045)
+        # 2. Bottom subtitle mask to shield from OCR text inspection
+        builder.add_subtitle_mask(height_ratio=0.12, opacity=0.70)
+        # 3. Color grading & grain
+        builder.add_color_grade(contrast=1.03, brightness=0.012, saturation=1.04, gamma=1.015)
+        builder.add_film_grain(intensity=3)
+        # 4. 2.8% speedup and pitch shift to desynchronize ASR acoustic models
+        builder.set_sync_speed(speed_ratio=1.028)
+        builder.add_pitch_shift(semitones=0.35)
+        builder.add_equalizer(low_gain_db=1.0, high_gain_db=-1.0)
+        builder.add_noise_floor()
+        if custom_opts.get("hflip", False):
+            builder.add_mirror_hflip()
+
     elif preset == PresetMode.CUSTOM:
         zoom = float(custom_opts.get("zoom", 1.0))
         if zoom > 1.0001:
@@ -63,6 +81,9 @@ def apply_preset(
 
         if custom_opts.get("color_grade", False):
             builder.add_color_grade()
+
+        if custom_opts.get("subtitle_mask", False):
+            builder.add_subtitle_mask()
 
         if custom_opts.get("hflip", False):
             builder.add_mirror_hflip()

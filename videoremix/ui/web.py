@@ -117,6 +117,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                     <label>去重方案预设</label>
                     <select id="presetSelect" onchange="updatePresetDesc()">
                         <option value="balanced" selected>强效去重 (自媒体矩阵推荐)</option>
+                        <option value="ecommerce">电商专版 (专克京东/拼多多机器拦截)</option>
                         <option value="quality">画质保真 (高保真原创推荐)</option>
                         <option value="pip">智能画中画 (高斯模糊背景)</option>
                         <option value="custom">自定义: 详细参数调节</option>
@@ -161,6 +162,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                         <label style="display:flex; align-items:center; gap:6px; cursor:pointer;"><input type="checkbox" id="customPip"> 画中画模式</label>
                         <label style="display:flex; align-items:center; gap:6px; cursor:pointer;"><input type="checkbox" id="customColor" checked> 自然调色</label>
                         <label style="display:flex; align-items:center; gap:6px; cursor:pointer;"><input type="checkbox" id="customEq" checked> 声学重构</label>
+                        <label style="display:flex; align-items:center; gap:6px; cursor:pointer;"><input type="checkbox" id="customMask"> 底部字幕遮罩</label>
                     </div>
                 </div>
 
@@ -216,6 +218,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <script>
         const PRESETS = {
             "balanced": "【强效去重】微平移缩放 (1.02x) + 同步变速 (1.018x) + 音高微调 + 均衡重构 + 胶片微噪点（音画严格对齐）",
+            "ecommerce": "【电商专版】专克京东/拼多多初审 (底部字幕遮罩阻断OCR + 口播抗ASR变速微变调 + 4.5%边缘净空)",
             "quality": "【画质保真】轻量色彩调优 + 微变调 + 底噪混入 + 胶片微噪点（零观感破坏）",
             "pip": "【智能画中画】90% 居中原画 + 动态高斯模糊背景 + 全面声学指纹重塑（强力变体）",
             "custom": "【自定义模式】自由配置缩放比例、变速比率、胶片噪点、变调以及滤镜开关"
@@ -301,6 +304,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                     pip: document.getElementById('customPip').checked,
                     color_grade: document.getElementById('customColor').checked,
                     equalizer: document.getElementById('customEq').checked,
+                    subtitle_mask: document.getElementById('customMask').checked,
                     noise_floor: true
                 };
             }
@@ -383,6 +387,8 @@ class WebUIServer:
                             preset_name = f"自定义 ({z:.2f}x/{s:.3f}x)"
                         elif t.preset == PresetMode.BALANCED_REMIX:
                             preset_name = "强效去重"
+                        elif t.preset == PresetMode.ECOMMERCE:
+                            preset_name = "电商专版"
                         elif t.preset == PresetMode.QUALITY_FIRST:
                             preset_name = "画质保真"
                         elif t.preset == PresetMode.SMART_PIP:
@@ -430,6 +436,7 @@ class WebUIServer:
                     preset_map = {
                         "quality": PresetMode.QUALITY_FIRST,
                         "balanced": PresetMode.BALANCED_REMIX,
+                        "ecommerce": PresetMode.ECOMMERCE,
                         "pip": PresetMode.SMART_PIP,
                         "custom": PresetMode.CUSTOM,
                     }

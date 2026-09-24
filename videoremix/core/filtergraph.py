@@ -65,6 +65,14 @@ class FilterGraphBuilder:
         self.pip_blur = blur
         return self
 
+    def add_subtitle_mask(self, height_ratio: float = 0.12, opacity: float = 0.70) -> "FilterGraphBuilder":
+        """Apply a semi-transparent bottom banner to disrupt OCR subtitle recognition."""
+        if not self.info.has_video or height_ratio <= 0.0:
+            return self
+        f = f"drawbox=x=0:y=ih*(1.0-{height_ratio:.3f}):w=iw:h=ih*{height_ratio:.3f}:color=black@{opacity:.2f}:t=fill"
+        self.video_filters.append(f)
+        return self
+
     # ------------------ Audio Transformations ------------------
 
     def add_pitch_shift(self, semitones: float = 0.25) -> "FilterGraphBuilder":

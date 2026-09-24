@@ -95,6 +95,7 @@ class VideoRemixApp:
         self.custom_color_var = tk.BooleanVar(value=True)
         self.custom_eq_var = tk.BooleanVar(value=True)
         self.custom_noise_var = tk.BooleanVar(value=True)
+        self.custom_mask_var = tk.BooleanVar(value=False)
 
         self._task_tree_items: Dict[str, str] = {}  # task_id -> treeview iid
 
@@ -221,6 +222,7 @@ class VideoRemixApp:
 
         presets = [
             (PresetMode.BALANCED_REMIX.value, "推荐: 强效去重 (自媒体矩阵)"),
+            (PresetMode.ECOMMERCE.value, "专版: 电商防查重 (专克京东/拼多多)"),
             (PresetMode.QUALITY_FIRST.value, "保真: 画质优先 (高保真原创)"),
             (PresetMode.SMART_PIP.value, "变体: 智能画中画 (模糊背景)"),
             (PresetMode.CUSTOM.value, "自定义: 详细参数调节"),
@@ -356,6 +358,11 @@ class VideoRemixApp:
             cb_grid, text="声学重构", variable=self.custom_eq_var,
             font=(self.font_family, 8), fg="#cdd6f4", bg="#252538", selectcolor="#313244", activebackground="#252538"
         ).grid(row=1, column=1, sticky=tk.W, pady=1)
+
+        tk.Checkbutton(
+            cb_grid, text="底部字幕遮罩 (阻断OCR)", variable=self.custom_mask_var,
+            font=(self.font_family, 8), fg="#cdd6f4", bg="#252538", selectcolor="#313244", activebackground="#252538"
+        ).grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=1)
 
         # Output Directory Settings
         tk.Label(
@@ -553,6 +560,7 @@ class VideoRemixApp:
             "color_grade": bool(self.custom_color_var.get()),
             "equalizer": bool(self.custom_eq_var.get()),
             "noise_floor": bool(self.custom_noise_var.get()),
+            "subtitle_mask": bool(self.custom_mask_var.get()),
         }
 
     def _browse_output_dir(self):
@@ -614,6 +622,7 @@ class VideoRemixApp:
         mapping = {
             PresetMode.QUALITY_FIRST: "画质保真",
             PresetMode.BALANCED_REMIX: "强效去重",
+            PresetMode.ECOMMERCE: "电商专版",
             PresetMode.SMART_PIP: "智能画中画",
         }
         return mapping.get(task.preset, task.preset.value)
