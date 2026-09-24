@@ -43,8 +43,10 @@
 无需安装 Python，也无需配置任何 FFmpeg 环境，直接前往 Releases 页面：
 👉 **[下载最新编译版 (GitHub Releases)](https://github.com/ruiworm/VideoRemix/releases)**
 
-* **Windows 用户**：下载 `VideoRemix-windows-x64.zip`，解压后双击 `VideoRemix.exe` 即可启动原生桌面 GUI！
-* **WSL / 命令行用户**：亦可在解压目录下运行 `VideoRemix --web` 开启浏览器控制台，或直接调用 CLI。
+* **Windows 用户（二选一）：**
+  * **⚡ 免解压单文件版（最推荐）**：下载 `VideoRemix-windows-x64.exe`，**无需解压，直接双击运行**即可打开原生 GUI！
+  * **📁 便携绿色压缩包**：下载 `VideoRemix-windows-x64.zip`，解压后双击 `VideoRemix.exe` 运行。
+* **WSL / 命令行用户**：运行 `VideoRemix --web` 开启浏览器控制台，或直接调用 CLI 批处理。
 
 ---
 

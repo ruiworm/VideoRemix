@@ -56,59 +56,25 @@ jobs:
       - name: Bundle Executable & FFmpeg
         shell: bash
         run: |
-          pyinstaller --clean -y packaging/videoremix.spec
-
-          # Copy and bundle FFmpeg binary into dist/VideoRemix
-          python - << 'EOF'
-          import sys
-          import os
-          import shutil
-          import imageio_ffmpeg
-
-          src = imageio_ffmpeg.get_ffmpeg_exe()
-          dest_dir = os.path.join("dist", "VideoRemix")
-          os.makedirs(dest_dir, exist_ok=True)
-
-          # Copy primary binary name
-          dest_file = os.path.join(dest_dir, os.path.basename(src))
-          shutil.copy(src, dest_file)
-
-          # Guarantee alias ffmpeg.exe (Windows) or ffmpeg (Unix)
-          if os.name == "nt" or "win" in sys.platform.lower():
-              alias = os.path.join(dest_dir, "ffmpeg.exe")
-          else:
-              alias = os.path.join(dest_dir, "ffmpeg")
-          shutil.copy(src, alias)
-          if os.path.exists(alias) and os.name != "nt":
-              os.chmod(alias, 0o755)
-
-          # Write portable release notice
-          with open(os.path.join(dest_dir, "README_PORTABLE.txt"), "w", encoding="utf-8") as f:
-              f.write("VideoRemix Pro - Portable Standalone Edition\n")
-              f.write("============================================\n\n")
-              f.write("1. Double click VideoRemix / VideoRemix.exe to launch Desktop GUI.\n")
-              f.write("2. Run 'VideoRemix --web' to launch Browser Web Console.\n")
-              f.write("3. Run 'VideoRemix input.mp4 -o output.mp4 --preset balanced' for CLI.\n\n")
-              f.write("No Python or FFmpeg installation required. All dependencies are bundled.\n")
-          print(f"Successfully bundled FFmpeg to {alias}")
-          EOF
+          python packaging/build_release.py
 
       - name: Package Distributable Archive
         shell: bash
         run: |
-          cd dist
           if [ "${{ runner.os }}" = "Windows" ]; then
-            7z a -tzip "../${{ matrix.archive_name }}" VideoRemix/*
+            powershell -Command "Compress-Archive -Path 'dist/VideoRemix' -DestinationPath '${{ matrix.archive_name }}' -Force"
           else
-            tar -czvf "../${{ matrix.archive_name }}" VideoRemix/
+            tar -czvf "${{ matrix.archive_name }}" -C dist VideoRemix
           fi
-          cd ..
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.archive_name }}
+          path: |
+            ${{ matrix.archive_name }}
+            VideoRemix-windows-x64.exe
+          if-no-files-found: ignore
 
   publish:
     name: Publish GitHub Release
