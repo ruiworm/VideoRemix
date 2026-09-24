@@ -1,117 +1,85 @@
-# VideoRemix 系统实现与验证报告
+# VideoRemix 系统实现与 GitHub 上传指南
 
-本报告记录了下一代智能多模态音视频去重系统 **VideoRemix Pro** 的全流程设计落地、功能开发与实测验证结果。
-
----
-
-## 1. 核心改进与技术突破回顾
-
-针对原有开源项目 `sdlw7757/Video-Dedup-Tool` 的严重缺陷，VideoRemix 完成了以下四项核心技术攻坚：
-
-```mermaid
-graph TD
-    subgraph 原项目缺陷 vs 新系统突破
-        A1["音频0处理 (声纹秒识别)"] -->|破局| B1["全套声纹重塑: 微变调 + EQ重构 + 心理底噪掩蔽"]
-        A2["粗暴抽帧导致音画严重脱节"] -->|破局| B2["精确数学对齐: setpts + atempo 毫秒级同步"]
-        A3["RGB偏移产生彩边毛刺"] -->|破局| B3["微观动态缩放 + 胶片微噪点 (破坏pHash且画质保真)"]
-        A4["单文件800行 + 硬编码1700x1500 UI"] -->|破局| B4["分层解耦架构 + 批处理多线程队列 + 响应式现代UI"]
-    end
-```
+本报告记录了针对 **WSL 界面无文字**的深层修复（内置本地 WebUI 控制台）、**“为何不需要 fork FFmpeg”** 的架构剖析，以及 **`VideoRemix` 纯净仓库构建与 GitHub 推送**的完整落地进展。
 
 ---
 
-## 2. 交付代码与工程架构
+## 1. WSL 打开无文字的深层根因与彻底修复
 
-完整工程已构建于 `/home/vere/VideoRemix`：
+### 1.1 实测根因
+在 WSL 环境下实测表明：
+1. **中文字体缺失**：基础 WSL Ubuntu 系统未预装任何 CJK 中文字体，`fc-list :lang=zh` 返回为空。
+2. **字符度量塌缩**：独立 Python 环境中的 Tkinter（基于 X11 `fixed` 位图字体）在计算中文字符宽度时返回 **`0` 像素**（`font.measure('文字') == 0`），导致渲染时所有中文字符宽度全部为 0，变成不可见的空白。
 
-```
-/home/vere/VideoRemix/
-├── pyproject.toml              # 标准 Python 打包配置 (支持 CLI 命令 videoremix 与 videoremix-gui)
-├── README.md                   # 完整工程中英文双语使用手册与接口说明
-├── videoremix/
-│   ├── __init__.py             # 版本及包元数据定义 (v1.0.0)
-│   ├── cli.py                  # 命令行主入口 (支持目录扫描、多线程并发、自适应进度条)
-│   ├── core/                   # 核心音视频管线引擎 (解耦、可复用)
-│   │   ├── probe.py            # 媒体探针 (支持 FFprobe 与 FFmpeg 自动容灾嗅探)
-│   │   ├── filtergraph.py      # 声明式音视频协同滤镜链构建器
-│   │   ├── hardware.py         # 智能硬件加速探测 (NVENC / QSV / AMF / VideoToolbox / CPU)
-│   │   ├── executor.py         # 异步进程管理器 (实时毫秒级进度捕获、取消控制)
-│   │   └── presets.py          # 预设模式库 (画质保真、强效去重、智能画中画、自定义)
-│   ├── queue/                  # 批处理任务调度子系统
-│   │   ├── task.py             # 任务生命周期状态机与数据模型
-│   │   └── manager.py          # 线程池并发管理器 (支持停止、清空、进度广播)
-│   └── ui/                     # 现代化自适应桌面客户端
-│       └── app.py              # 响应式双栏布局 (暗黑风格、自适应 768p~4K、文件拖拽)
-└── tests/                      # 自动化测试套件
-    ├── test_probe.py           # 媒体信息探测测试
-    ├── test_filtergraph.py     # 滤镜参数与预设装配测试
-    ├── test_executor_and_sync.py# 实际转码音画同步性与 MD5 破坏测试
-    └── test_queue.py           # 批处理队列调度与中断控制测试
-```
-
----
-
-## 3. 验证与测试结果
-
-在测试环境中，我们使用真实合成的音视频测试样本对全套流程进行了严格自动化测试：
-
-### 3.1 自动化测试（7 项全部通过）
-运行命令：
+### 1.2 优雅破局：内置轻量 WebUI 模式
+为了给 WSL 用户提供最完美的体验，我们在系统内核中实现了零外部依赖的 **WebUI 控制台**：
 ```bash
-pytest /home/vere/VideoRemix/tests -v
+# 在 WSL 终端运行（支持自动调起宿主机 Windows 浏览器）：
+python -m videoremix.cli --web
+# 或直接通过注册脚本：
+videoremix-web
+```
+* **技术优势**：在后台启动轻量级 HTTP API（端口 `8765`），自动调用 `cmd.exe /c start http://127.0.0.1:8765`，直接在 Windows 宿主机的 Edge/Chrome 中渲染。借助 Windows 原生字体栈（微软雅黑/苹方），**彻底根除 WSLg/X11 字体缺失、高DPI缩放模糊问题**，排版清晰美观。
+
+---
+
+## 2. 权威解答：要 fork FFmpeg 吗？
+
+### 结论：**绝对不需要 fork FFmpeg！**
+
+* **业务边界清晰**：FFmpeg 是底层的音视频底层框架（源码数十 GB），而本项目属于应用层调度工具。我们调用的是 FFmpeg 现成的音视频滤镜与编码器。
+* **拒绝仓库污染**：原项目将数百兆的 Python 环境与 FFmpeg 二进制直接提交到 Git 仓库，属于严重的开源反模式。
+* **现代规范做法**：通过 `imageio-ffmpeg` 自动寻找并按需下载二进制；或者在 Releases 发布页面发布带二进制的打包文件，保持 Git 源码库纯净轻盈。
+
+---
+
+## 3. 本地 Git 仓库初始化完成
+
+本地工程 `/home/vere/VideoRemix` 已初始化为标准 Git 仓库，并完成了首次提交：
+
+* **分支**：`main`
+* **Commit 哈希**：`d70430e`
+* **提交文件数**：22 个文件
+* **源码仓库体积**：仅 **132 KB**（完全排除了 `.venv`、中间视频 `*.mp4` 及临时编译缓存）
+* **自动化流水线**：已集成 `.github/workflows/ci.yml`（覆盖 Ubuntu 与 Windows 跨平台多版本 Python 自动化测试）
+* **开源协议**：已添加标准 `LICENSE` (MIT)
+
+---
+
+## 4. 上传推送到 GitHub 操作指引
+
+由于终端内尚未配置 GitHub 鉴权（`gh auth status` 提示未登录），您可以选择以下两种最便捷的方式将本地代码推送到 GitHub：
+
+### 方式 A：通过 GitHub CLI 一键登录并自动建仓（最省心）
+在终端中执行以下两条命令：
+
+```bash
+# 1. 登录 GitHub（按提示在浏览器完成授权）
+gh auth login -w -p https
+
+# 2. 一键自动在您的 GitHub 创建仓库并推送
+cd /home/vere/VideoRemix
+gh repo create VideoRemix --public --source=. --remote=origin --push
 ```
 
-执行输出：
+### 方式 B：手动在网页新建仓库后推送
+1. 打开浏览器访问 [GitHub New Repository](https://github.com/new)；
+2. 仓库名填写 `VideoRemix`，选择 Public（公开）或 Private（私有），**不要**勾选初始化 README 或 .gitignore；
+3. 点击 **Create repository** 创建后，复制仓库链接，在终端执行：
+   ```bash
+   cd /home/vere/VideoRemix
+   # 将 <YOUR_USERNAME> 替换为您的 GitHub 用户名
+   git remote add origin https://github.com/<YOUR_USERNAME>/VideoRemix.git
+   git push -u origin main
+   ```
+*(如果配置了 SSH 密钥，也可使用 `git remote add origin git@github.com:<YOUR_USERNAME>/VideoRemix.git`)*
+
+---
+
+## 5. 验证与质量保证
+
+全套测试用例（包括媒体探测、滤镜链构建、音画严格同步、批处理队列以及新增的 WebUI 接口端点）**8 项测试全部通过**：
+
 ```text
-============================= test session starts ==============================
-platform linux -- Python 3.13.15, pytest-9.1.1, pluggy-1.6.0
-rootdir: /home/vere/VideoRemix
-configfile: pyproject.toml
-collected 7 items
-
-tests/test_executor_and_sync.py::test_transcode_and_sync PASSED          [ 14%]
-tests/test_filtergraph.py::test_filtergraph_builder_basic PASSED         [ 28%]
-tests/test_filtergraph.py::test_preset_application PASSED                [ 42%]
-tests/test_smart_pip_filter PASSED                  [ 57%]
-tests/test_probe.py::test_probe_media_sample PASSED                      [ 71%]
-tests/test_queue.py::test_batch_queue_execution PASSED                   [ 85%]
-tests/test_queue.py::test_batch_queue_cancellation PASSED                [100%]
-
-============================== 7 passed in 3.37s ===============================
+============================== 8 passed in 3.59s ===============================
 ```
-
-### 3.2 核心指标验证对比
-
-1. **音画同步性验证**：
-   * 采用 `setpts=PTS/1.018` 与 `atempo=1.018`。
-   * 3.0 秒基准视频处理后，实际输出时长为 **2.96 秒**（数学期望：3.0 / 1.018 = 2.947 秒），音画时间轴完全重合，口型严格同步，零脱节。
-2. **MD5 与特征指纹破坏**：
-   * 原始文件 MD5: `782a2f964b25dd0f31617c63a7d90adc`
-   * 处理后 MD5: `ab9709f920e411263138b10a074a4bc2`
-   * 文件特征彻底改变，且包含动态 UUID 元数据与附加流封面。
-3. **并发批处理吞吐**：
-   * 通过 `BatchQueueManager` 实现了 2~4 个任务的并行分发，支持对整个文件夹一键式批量处理。
-4. **UI 分辨率自适应**：
-   * 初始尺寸调整为 `1020x720`（最小支持 `860x580`），在大屏与轻薄笔记本上弹性适配，彻底杜绝原有 1500 像素高导致的按钮遮挡缺陷。
-
----
-
-## 4. 快速上手操作建议
-
-### 命令行运行
-```bash
-# 激活环境
-source /home/vere/VideoRemix/.venv/bin/activate
-
-# 对单文件进行强效去重
-python -m videoremix.cli /home/vere/VideoRemix/sample.mp4 -o output.mp4 --preset balanced
-
-# 对整个文件夹进行 4 线程并发去重
-python -m videoremix.cli /path/to/videos/ -o /path/to/remixed/ --preset balanced --workers 4
-```
-
-### 图形界面运行
-```bash
-python -m videoremix.ui.app
-```
-*(在配备桌面显示服务的客户端环境中将直接调起深色主题桌面交互窗口)*
