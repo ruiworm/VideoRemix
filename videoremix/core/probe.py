@@ -16,12 +16,28 @@ def get_ffmpeg_bin() -> str:
     if getattr(sys, "frozen", False):
         candidates = []
         if hasattr(sys, "_MEIPASS"):
+            meipass = sys._MEIPASS
             candidates.extend([
-                os.path.join(sys._MEIPASS, "ffmpeg.exe"),
-                os.path.join(sys._MEIPASS, "ffmpeg"),
-                os.path.join(sys._MEIPASS, "bin", "ffmpeg.exe"),
-                os.path.join(sys._MEIPASS, "bin", "ffmpeg"),
+                os.path.join(meipass, "ffmpeg.exe"),
+                os.path.join(meipass, "ffmpeg"),
+                os.path.join(meipass, "bin", "ffmpeg.exe"),
+                os.path.join(meipass, "bin", "ffmpeg"),
             ])
+            # Dynamically scan sys._MEIPASS for any file starting with ffmpeg (such as ffmpeg-win64-*.exe)
+            if os.path.isdir(meipass):
+                try:
+                    for root_dir, _, filenames in os.walk(meipass):
+                        for fn in filenames:
+                            fn_lower = fn.lower()
+                            if fn_lower.startswith("ffmpeg") and not fn_lower.endswith(
+                                (".py", ".pyc", ".pyo", ".pyd", ".txt", ".json", ".md", ".rst", ".html", ".dll")
+                            ):
+                                cand_path = os.path.join(root_dir, fn)
+                                if os.path.isfile(cand_path):
+                                    candidates.append(cand_path)
+                except Exception:
+                    pass
+
         exe_dir = os.path.dirname(sys.executable)
         candidates.extend([
             os.path.join(exe_dir, "ffmpeg.exe"),
@@ -30,7 +46,9 @@ def get_ffmpeg_bin() -> str:
             os.path.join(exe_dir, "bin", "ffmpeg"),
         ])
         for cand in candidates:
-            if os.path.exists(cand):
+            if os.path.isfile(cand) and os.path.exists(cand):
+                if (sys.platform.startswith("win") or os.name == "nt") and not cand.lower().endswith(".exe"):
+                    continue
                 return os.path.abspath(cand)
 
     # 2. imageio-ffmpeg
@@ -39,7 +57,7 @@ def get_ffmpeg_bin() -> str:
         exe = imageio_ffmpeg.get_ffmpeg_exe()
         if exe and os.path.exists(exe):
             return exe
-    except ImportError:
+    except Exception:
         pass
 
     # 3. System PATH
@@ -127,6 +145,10 @@ def probe_media(file_path: str, ffmpeg_bin: Optional[str] = None, ffprobe_bin: O
 
 
 def _probe_with_ffprobe(file_path: str, ffprobe_bin: str) -> MediaInfo:
+    extra_kwargs = {}
+    if sys.platform.startswith("win") or (os.name == "nt"):
+        extra_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+
     cmd = [
         ffprobe_bin,
         "-v", "quiet",
@@ -135,7 +157,16 @@ def _probe_with_ffprobe(file_path: str, ffprobe_bin: str) -> MediaInfo:
         "-show_streams",
         file_path,
     ]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    res = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        check=True,
+        stdin=subprocess.DEVNULL,
+        encoding="utf-8",
+        errors="replace",
+        **extra_kwargs,
+    )
     data = json.loads(res.stdout)
 
     info = MediaInfo(file_path=file_path)
@@ -165,13 +196,28 @@ def _probe_with_ffprobe(file_path: str, ffprobe_bin: str) -> MediaInfo:
             info.sample_rate = int(stream.get("sample_rate", 44100))
             info.channels = int(stream.get("channels", 2))
 
+    if not info.has_video and not info.has_audio:
+        raise RuntimeError(f"No video or audio stream found in {file_path}")
+
     return info
 
 
 def _probe_with_ffmpeg(file_path: str, ffmpeg_bin: str) -> MediaInfo:
+    extra_kwargs = {}
+    if sys.platform.startswith("win") or (os.name == "nt"):
+        extra_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+
     cmd = [ffmpeg_bin, "-hide_banner", "-i", file_path]
-    res = subprocess.run(cmd, capture_output=True, text=True)
-    text = res.stderr
+    res = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+        encoding="utf-8",
+        errors="replace",
+        **extra_kwargs,
+    )
+    text = res.stderr or ""
 
     info = MediaInfo(file_path=file_path)
 
@@ -228,5 +274,12 @@ def _probe_with_ffmpeg(file_path: str, ffmpeg_bin: str) -> MediaInfo:
             info.channels = 6
         else:
             info.channels = 2
+
+    if not info.has_video and not info.has_audio:
+        stderr_tail = "\n".join(text.strip().splitlines()[-15:]) if text.strip() else "(no stderr output)"
+        raise RuntimeError(
+            f"Failed to probe media file '{file_path}': No video or audio streams detected.\n"
+            f"FFmpeg stderr tail:\n{stderr_tail}"
+        )
 
     return info

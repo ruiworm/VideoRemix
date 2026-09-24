@@ -41,40 +41,51 @@ def build_release():
     # 2. On Windows: ALSO build Single-file Standalone .EXE (Zero extraction required)
     if is_win:
         print("\n=== [2/2] Building Single-file Standalone EXE (Zero Extraction) ===")
-        onefile_cmd = [
-            sys.executable,
-            "-m",
-            "PyInstaller",
-            "--clean",
-            "-y",
-            "--onefile",
-            "--windowed",
-            "--name",
-            "VideoRemix-windows-x64",
-            "--add-binary",
-            f"{ffmpeg_src};.",
-            "--hidden-import",
-            "videoremix",
-            "--hidden-import",
-            "videoremix.launcher",
-            "--hidden-import",
-            "videoremix.ui.app",
-            "--hidden-import",
-            "videoremix.ui.web",
-            "--hidden-import",
-            "imageio_ffmpeg",
-            "--hidden-import",
-            "tkinter",
-            "--paths",
-            ".",
-            "videoremix/launcher.py",
-        ]
-        subprocess.run(onefile_cmd, check=True)
-        onefile_src = os.path.join("dist", "VideoRemix-windows-x64.exe")
-        onefile_dst = "VideoRemix-windows-x64.exe"
-        if os.path.exists(onefile_src):
-            shutil.copy2(onefile_src, onefile_dst)
-            print(f"[*] Successfully generated standalone EXE: {onefile_dst}")
+        temp_ffmpeg = os.path.abspath("ffmpeg.exe")
+        shutil.copy2(ffmpeg_src, temp_ffmpeg)
+        try:
+            onefile_cmd = [
+                sys.executable,
+                "-m",
+                "PyInstaller",
+                "--clean",
+                "-y",
+                "--onefile",
+                "--windowed",
+                "--name",
+                "VideoRemix-windows-x64",
+                "--add-binary",
+                f"{temp_ffmpeg};.",
+                "--collect-all",
+                "imageio_ffmpeg",
+                "--hidden-import",
+                "videoremix",
+                "--hidden-import",
+                "videoremix.launcher",
+                "--hidden-import",
+                "videoremix.ui.app",
+                "--hidden-import",
+                "videoremix.ui.web",
+                "--hidden-import",
+                "imageio_ffmpeg",
+                "--hidden-import",
+                "tkinter",
+                "--paths",
+                ".",
+                "videoremix/launcher.py",
+            ]
+            subprocess.run(onefile_cmd, check=True)
+            onefile_src = os.path.join("dist", "VideoRemix-windows-x64.exe")
+            onefile_dst = "VideoRemix-windows-x64.exe"
+            if os.path.exists(onefile_src):
+                shutil.copy2(onefile_src, onefile_dst)
+                print(f"[*] Successfully generated standalone EXE: {onefile_dst}")
+        finally:
+            if os.path.exists(temp_ffmpeg):
+                try:
+                    os.remove(temp_ffmpeg)
+                except Exception:
+                    pass
 
     print("\n[OK] Build completed successfully!")
 

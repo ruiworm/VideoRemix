@@ -4,6 +4,35 @@ import os
 import sys
 
 
+def setup_windows_dpi_awareness():
+    """Configure Windows high-DPI awareness before creating Tk instance."""
+    if sys.platform.startswith("win") or (os.name == "nt"):
+        try:
+            import ctypes
+            # 1. Per-Monitor V2 (Windows 10 Creators Update 1703+)
+            try:
+                if ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):
+                    return
+            except Exception:
+                pass
+
+            # 2. System DPI Aware (Windows 8.1+)
+            try:
+                if ctypes.windll.shcore.SetProcessDpiAwareness(1) == 0:
+                    return
+            except Exception:
+                pass
+
+            # 3. Process DPI Aware (Windows Vista+)
+            try:
+                if ctypes.windll.user32.SetProcessDPIAware():
+                    return
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+
 def main():
     # 1. Force Web UI if requested
     if "--web" in sys.argv:
@@ -21,6 +50,7 @@ def main():
 
     # 3. Default: Desktop GUI (Tkinter)
     try:
+        setup_windows_dpi_awareness()
         from videoremix.ui.app import main as gui_main
         gui_main()
     except Exception as exc:

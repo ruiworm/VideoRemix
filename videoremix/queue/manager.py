@@ -46,6 +46,15 @@ class BatchQueueManager:
         if not output_path:
             p = Path(input_path)
             output_path = str(p.parent / f"{p.stem}_remix{p.suffix}")
+        else:
+            p_in = Path(input_path)
+            p_out = Path(output_path)
+            try:
+                is_same = p_in.resolve() == p_out.resolve()
+            except Exception:
+                is_same = os.path.abspath(str(p_in)) == os.path.abspath(str(p_out))
+            if is_same:
+                output_path = str(p_out.parent / f"{p_in.stem}_remix{p_in.suffix}")
 
         task = RemediationTask(
             input_path=os.path.abspath(input_path),
@@ -176,13 +185,44 @@ class BatchQueueManager:
             executor = FFmpegExecutor()
             task.executor = executor
 
-            executor.run_remediation(
-                media_info=info,
-                builder=builder,
-                output_path=task.output_path,
-                encoder_config=encoder,
-                on_progress=on_progress,
-            )
+            current_encoder = encoder
+            try:
+                executor.run_remediation(
+                    media_info=info,
+                    builder=builder,
+                    output_path=task.output_path,
+                    encoder_config=current_encoder,
+                    on_progress=on_progress,
+                )
+            except ExecutionCancelledError:
+                raise
+            except Exception as hw_exc:
+                if (
+                    getattr(current_encoder, "is_hardware", False)
+                    and task.status != TaskStatus.CANCELLED
+                    and self._is_running
+                ):
+                    logger.warning(
+                        f"Task {task.task_id} hardware encoder ({getattr(current_encoder, 'name', 'GPU')}) failed: {hw_exc}. "
+                        "Retrying with CPU encoding fallback..."
+                    )
+                    cpu_encoder = HardwareDetector.detect_best_encoder(force_cpu=True)
+                    task.progress = 0.0
+                    task.speed = "0.0x"
+                    task.eta = 0.0
+                    self._notify_update(task)
+
+                    executor = FFmpegExecutor()
+                    task.executor = executor
+                    executor.run_remediation(
+                        media_info=info,
+                        builder=builder,
+                        output_path=task.output_path,
+                        encoder_config=cpu_encoder,
+                        on_progress=on_progress,
+                    )
+                else:
+                    raise
 
             task.status = TaskStatus.SUCCESS
             task.progress = 100.0

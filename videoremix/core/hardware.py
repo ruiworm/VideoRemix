@@ -1,8 +1,10 @@
 """Hardware acceleration detection and encoder configuration."""
 
 from dataclasses import dataclass, field
+import os
 import platform
 import subprocess
+import sys
 from typing import List, Optional
 from videoremix.core.probe import get_ffmpeg_bin
 
@@ -23,8 +25,20 @@ class HardwareDetector:
     @classmethod
     def get_supported_encoders(cls, ffmpeg_bin: Optional[str] = None) -> List[str]:
         bin_path = ffmpeg_bin or get_ffmpeg_bin()
+        extra_kwargs = {}
+        if sys.platform.startswith("win") or (os.name == "nt"):
+            extra_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
         try:
-            res = subprocess.run([bin_path, "-encoders"], capture_output=True, text=True, check=True)
+            res = subprocess.run(
+                [bin_path, "-encoders"],
+                capture_output=True,
+                text=True,
+                check=True,
+                stdin=subprocess.DEVNULL,
+                encoding="utf-8",
+                errors="replace",
+                **extra_kwargs,
+            )
             encoders = []
             for line in res.stdout.splitlines():
                 if "V....." in line or "V.S..." in line:
@@ -125,14 +139,23 @@ class HardwareDetector:
     @classmethod
     def _test_encoder(cls, encoder: str, ffmpeg_bin: Optional[str] = None) -> bool:
         bin_path = ffmpeg_bin or get_ffmpeg_bin()
+        extra_kwargs = {}
+        if sys.platform.startswith("win") or (os.name == "nt"):
+            extra_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
         test_cmd = [
-            bin_path, "-v", "quiet",
+            bin_path, "-nostdin", "-v", "quiet",
             "-f", "lavfi", "-i", "nullsrc=s=64x64:d=0.1",
             "-c:v", encoder,
             "-f", "null", "-"
         ]
         try:
-            res = subprocess.run(test_cmd, capture_output=True, timeout=3)
+            res = subprocess.run(
+                test_cmd,
+                capture_output=True,
+                timeout=3,
+                stdin=subprocess.DEVNULL,
+                **extra_kwargs,
+            )
             return res.returncode == 0
         except Exception:
             return False

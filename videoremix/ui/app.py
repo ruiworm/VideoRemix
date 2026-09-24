@@ -10,11 +10,41 @@ from typing import Dict, List, Optional
 # Ensure package path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+from pathlib import Path
 from videoremix import __version__
 from videoremix.core.hardware import HardwareDetector
 from videoremix.core.presets import PRESET_DESCRIPTIONS, PresetMode
 from videoremix.queue.manager import BatchQueueManager
 from videoremix.queue.task import RemediationTask, TaskStatus
+
+
+def setup_windows_dpi_awareness():
+    """Configure Windows high-DPI awareness before creating Tk instance."""
+    if sys.platform.startswith("win") or (os.name == "nt"):
+        try:
+            import ctypes
+            # 1. Per-Monitor V2 (Windows 10 Creators Update 1703+)
+            try:
+                if ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):
+                    return
+            except Exception:
+                pass
+
+            # 2. System DPI Aware (Windows 8.1+)
+            try:
+                if ctypes.windll.shcore.SetProcessDpiAwareness(1) == 0:
+                    return
+            except Exception:
+                pass
+
+            # 3. Process DPI Aware (Windows Vista+)
+            try:
+                if ctypes.windll.user32.SetProcessDPIAware():
+                    return
+            except Exception:
+                pass
+        except Exception:
+            pass
 
 
 class VideoRemixApp:
@@ -24,9 +54,22 @@ class VideoRemixApp:
         self.root = root
         self.root.title(f"VideoRemix Pro v{__version__} - 智能多模态音视频去重系统")
 
-        # Responsive default size (comfortable on 768p, 1080p, and 4K displays)
-        self.root.geometry("1020x720")
-        self.root.minsize(860, 580)
+        # DPI Awareness & Scaling
+        is_win = sys.platform.startswith("win") or (os.name == "nt")
+        self.font_family = "Microsoft YaHei UI" if is_win else "Segoe UI"
+        try:
+            dpi = float(self.root.winfo_fpixels('1i'))
+            self.scale = max(1.0, dpi / 96.0)
+        except Exception:
+            self.scale = 1.0
+
+        # Responsive size scaled by DPI
+        win_w = int(1020 * self.scale)
+        win_h = int(720 * self.scale)
+        min_w = int(860 * self.scale)
+        min_h = int(580 * self.scale)
+        self.root.geometry(f"{win_w}x{win_h}")
+        self.root.minsize(min_w, min_h)
         self.root.configure(bg="#1e1e2e")
 
         self.queue_manager = BatchQueueManager(max_workers=2)
@@ -65,15 +108,15 @@ class VideoRemixApp:
             background="#252538",
             foreground="#cdd6f4",
             fieldbackground="#252538",
-            rowheight=28,
-            font=("Segoe UI", 9),
+            rowheight=max(28, int(28 * self.scale)),
+            font=(self.font_family, 9),
         )
         style.configure(
             "Treeview.Heading",
             background="#313244",
             foreground="#cdd6f4",
             relief="flat",
-            font=("Segoe UI", 9, "bold"),
+            font=(self.font_family, 9, "bold"),
         )
         style.map("Treeview", background=[("selected", "#45475a")])
 
@@ -82,13 +125,13 @@ class VideoRemixApp:
 
     def _build_layout(self):
         # 1. Top Header Bar
-        header = tk.Frame(self.root, bg="#181825", height=65)
+        header = tk.Frame(self.root, bg="#181825", height=int(65 * self.scale))
         header.pack(fill=tk.X, side=tk.TOP)
 
         title_lbl = tk.Label(
             header,
             text="VideoRemix Engine",
-            font=("Segoe UI", 16, "bold"),
+            font=(self.font_family, 16, "bold"),
             fg="#cdd6f4",
             bg="#181825",
         )
@@ -97,7 +140,7 @@ class VideoRemixApp:
         codec_badge = tk.Label(
             header,
             text=f"加速引擎: {self.encoder_config.name}",
-            font=("Segoe UI", 9, "bold"),
+            font=(self.font_family, 9, "bold"),
             fg="#a6e3a1" if self.encoder_config.is_hardware else "#f9e2af",
             bg="#313244",
             padx=10,
@@ -109,8 +152,8 @@ class VideoRemixApp:
         content = tk.Frame(self.root, bg="#1e1e2e")
         content.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
 
-        # Left Column: Presets & Controls (Width 320)
-        left_panel = tk.Frame(content, bg="#252538", width=320, padx=14, pady=14)
+        # Left Column: Presets & Controls (Width 320 * scale)
+        left_panel = tk.Frame(content, bg="#252538", width=int(320 * self.scale), padx=14, pady=14)
         left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 12))
         left_panel.pack_propagate(False)
 
@@ -122,13 +165,13 @@ class VideoRemixApp:
         self._build_right_queue(right_panel)
 
         # 3. Bottom Status Bar
-        statusbar = tk.Frame(self.root, bg="#181825", height=32, padx=15)
+        statusbar = tk.Frame(self.root, bg="#181825", height=int(32 * self.scale), padx=15)
         statusbar.pack(fill=tk.X, side=tk.BOTTOM)
 
         tk.Label(
             statusbar,
             textvariable=self.global_status_var,
-            font=("Segoe UI", 9),
+            font=(self.font_family, 9),
             fg="#a6adc8",
             bg="#181825",
         ).pack(side=tk.LEFT, pady=6)
@@ -138,7 +181,7 @@ class VideoRemixApp:
         tk.Label(
             parent,
             text="去重模式预设",
-            font=("Segoe UI", 11, "bold"),
+            font=(self.font_family, 11, "bold"),
             fg="#cdd6f4",
             bg="#252538",
         ).pack(anchor=tk.W, pady=(0, 8))
@@ -157,7 +200,7 @@ class VideoRemixApp:
                 value=val,
                 variable=self.preset_var,
                 command=self._on_preset_changed,
-                font=("Segoe UI", 9),
+                font=(self.font_family, 9),
                 fg="#cdd6f4",
                 bg="#252538",
                 selectcolor="#313244",
@@ -170,10 +213,10 @@ class VideoRemixApp:
         self.desc_lbl = tk.Label(
             parent,
             text=PRESET_DESCRIPTIONS[PresetMode.BALANCED_REMIX],
-            font=("Segoe UI", 8),
+            font=(self.font_family, 8),
             fg="#a6adc8",
             bg="#1e1e2e",
-            wraplength=280,
+            wraplength=int(280 * self.scale),
             justify=tk.LEFT,
             padx=8,
             pady=8,
@@ -184,7 +227,7 @@ class VideoRemixApp:
         tk.Label(
             parent,
             text="输出目录 (留空为原目录)",
-            font=("Segoe UI", 9, "bold"),
+            font=(self.font_family, 9, "bold"),
             fg="#cdd6f4",
             bg="#252538",
         ).pack(anchor=tk.W, pady=(0, 4))
@@ -195,7 +238,7 @@ class VideoRemixApp:
         out_entry = tk.Entry(
             out_frame,
             textvariable=self.output_dir_var,
-            font=("Segoe UI", 8),
+            font=(self.font_family, 8),
             bg="#181825",
             fg="#cdd6f4",
             insertbackground="#cdd6f4",
@@ -207,7 +250,7 @@ class VideoRemixApp:
             out_frame,
             text="选择",
             command=self._browse_output_dir,
-            font=("Segoe UI", 8, "bold"),
+            font=(self.font_family, 8, "bold"),
             bg="#45475a",
             fg="#cdd6f4",
             relief=tk.FLAT,
@@ -221,7 +264,7 @@ class VideoRemixApp:
         tk.Label(
             workers_frame,
             text="并行任务数:",
-            font=("Segoe UI", 9),
+            font=(self.font_family, 9),
             fg="#cdd6f4",
             bg="#252538",
         ).pack(side=tk.LEFT)
@@ -231,7 +274,7 @@ class VideoRemixApp:
             to=8,
             textvariable=self.workers_var,
             width=5,
-            font=("Segoe UI", 9),
+            font=(self.font_family, 9),
             bg="#181825",
             fg="#cdd6f4",
             relief=tk.FLAT,
@@ -243,7 +286,7 @@ class VideoRemixApp:
             parent,
             text="▶ 开始批量处理",
             command=self._start_processing,
-            font=("Segoe UI", 11, "bold"),
+            font=(self.font_family, 11, "bold"),
             bg="#a6e3a1",
             fg="#11111b",
             relief=tk.FLAT,
@@ -257,7 +300,7 @@ class VideoRemixApp:
             text="■ 停止全部任务",
             command=self._stop_processing,
             state=tk.DISABLED,
-            font=("Segoe UI", 10, "bold"),
+            font=(self.font_family, 10, "bold"),
             bg="#f38ba8",
             fg="#11111b",
             relief=tk.FLAT,
@@ -275,7 +318,7 @@ class VideoRemixApp:
             toolbar,
             text="+ 添加视频文件...",
             command=self._add_files,
-            font=("Segoe UI", 9, "bold"),
+            font=(self.font_family, 9, "bold"),
             bg="#89b4fa",
             fg="#11111b",
             relief=tk.FLAT,
@@ -288,7 +331,7 @@ class VideoRemixApp:
             toolbar,
             text="+ 导入整文件夹...",
             command=self._add_folder,
-            font=("Segoe UI", 9),
+            font=(self.font_family, 9),
             bg="#313244",
             fg="#cdd6f4",
             relief=tk.FLAT,
@@ -301,7 +344,7 @@ class VideoRemixApp:
             toolbar,
             text="清空已完成",
             command=self._clear_completed,
-            font=("Segoe UI", 9),
+            font=(self.font_family, 9),
             bg="#313244",
             fg="#cdd6f4",
             relief=tk.FLAT,
@@ -330,18 +373,20 @@ class VideoRemixApp:
         self.tree.heading("speed", text="转码倍速")
         self.tree.heading("eta", text="预计剩余")
 
-        self.tree.column("name", width=260, anchor=tk.W)
-        self.tree.column("preset", width=100, anchor=tk.CENTER)
-        self.tree.column("status", width=90, anchor=tk.CENTER)
-        self.tree.column("progress", width=100, anchor=tk.CENTER)
-        self.tree.column("speed", width=80, anchor=tk.CENTER)
-        self.tree.column("eta", width=80, anchor=tk.CENTER)
+        self.tree.column("name", width=int(260 * self.scale), anchor=tk.W)
+        self.tree.column("preset", width=int(100 * self.scale), anchor=tk.CENTER)
+        self.tree.column("status", width=int(90 * self.scale), anchor=tk.CENTER)
+        self.tree.column("progress", width=int(100 * self.scale), anchor=tk.CENTER)
+        self.tree.column("speed", width=int(80 * self.scale), anchor=tk.CENTER)
+        self.tree.column("eta", width=int(80 * self.scale), anchor=tk.CENTER)
 
         tree_scroll = ttk.Scrollbar(parent, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.configure(yscrollcommand=tree_scroll.set)
 
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.tree.bind("<Double-1>", self._on_tree_double_click)
 
     # ------------------ Actions ------------------
 
@@ -370,7 +415,19 @@ class VideoRemixApp:
         mode = PresetMode(self.preset_var.get())
 
         for p in paths:
-            task = self.queue_manager.add_task(p, output_path=None, preset=mode)
+            out_path = None
+            if out_base:
+                p_in = Path(p)
+                target = Path(out_base) / p_in.name
+                try:
+                    is_same = target.resolve() == p_in.resolve()
+                except Exception:
+                    is_same = os.path.abspath(str(target)) == os.path.abspath(str(p_in))
+                if is_same:
+                    target = Path(out_base) / f"{p_in.stem}_remix{p_in.suffix}"
+                out_path = str(target)
+
+            task = self.queue_manager.add_task(p, output_path=out_path, preset=mode)
             self._insert_task_to_tree(task)
 
         self.global_status_var.set(f"已就绪: 当前队列共有 {len(self.queue_manager.tasks)} 个任务")
@@ -388,6 +445,24 @@ class VideoRemixApp:
             self._insert_task_to_tree(t)
 
         self.global_status_var.set(f"已就绪: 从目录添加了 {len(added)} 个视频任务")
+
+    def _on_tree_double_click(self, event):
+        item_id = self.tree.identify_row(event.y)
+        if not item_id:
+            return
+
+        target_task = None
+        for task in self.queue_manager.tasks:
+            if self._task_tree_items.get(task.task_id) == item_id:
+                target_task = task
+                break
+
+        if target_task and target_task.status == TaskStatus.FAILED:
+            err_msg = target_task.error_message or "未知错误信息"
+            messagebox.showerror(
+                f"任务失败详情 - {target_task.filename}",
+                f"文件: {target_task.filename}\n\n错误信息:\n{err_msg}",
+            )
 
     def _insert_task_to_tree(self, task: RemediationTask):
         status_text = self._format_status(task.status)
@@ -482,6 +557,7 @@ class VideoRemixApp:
 
 
 def main():
+    setup_windows_dpi_awareness()
     root = tk.Tk()
     app = VideoRemixApp(root)
     root.mainloop()

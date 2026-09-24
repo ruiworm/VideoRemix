@@ -1,9 +1,11 @@
 """FFmpeg subprocess execution and real-time progress parsing."""
 
+import collections
 import logging
 import os
 import re
 import subprocess
+import sys
 import threading
 import time
 from typing import Callable, List, Optional
@@ -52,7 +54,7 @@ class FFmpegExecutor:
         encoder = encoder_config or HardwareDetector.detect_best_encoder(self.ffmpeg_bin)
 
         # Build full command
-        cmd: List[str] = [self.ffmpeg_bin, "-y", "-i", media_info.file_path]
+        cmd: List[str] = [self.ffmpeg_bin, "-y", "-nostdin", "-i", media_info.file_path]
 
         # Add filters and metadata
         cmd.extend(builder.build_ffmpeg_args())
@@ -61,6 +63,8 @@ class FFmpegExecutor:
         if media_info.has_video:
             cmd.extend(["-c:v", encoder.video_codec])
             cmd.extend(encoder.video_args)
+            if "-pix_fmt" not in encoder.video_args:
+                cmd.extend(["-pix_fmt", "yuv420p"])
         else:
             cmd.extend(["-vn"])
 
@@ -81,26 +85,36 @@ class FFmpegExecutor:
         target_duration = media_info.duration / builder.speed_ratio if builder.speed_ratio > 0 else media_info.duration
         target_duration = max(0.1, target_duration)
 
+        extra_kwargs = {}
+        if sys.platform.startswith("win") or (os.name == "nt"):
+            extra_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+
         with self._lock:
             if self._cancelled:
                 raise ExecutionCancelledError("Task was cancelled prior to start")
             self.process = subprocess.Popen(
                 cmd,
+                stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
                 universal_newlines=True,
                 encoding="utf-8",
                 errors="replace",
                 bufsize=1,
+                **extra_kwargs,
             )
 
         start_time = time.time()
+        stderr_buffer = collections.deque(maxlen=30)
 
         try:
             while True:
                 line = self.process.stderr.readline()
                 if not line and self.process.poll() is not None:
                     break
+
+                if line:
+                    stderr_buffer.append(line)
 
                 if self._cancelled:
                     self.process.terminate()
@@ -111,7 +125,11 @@ class FFmpegExecutor:
 
             rc = self.process.poll()
             if rc != 0 and not self._cancelled:
-                raise RuntimeError(f"FFmpeg process exited with code {rc}")
+                tail = "".join(list(stderr_buffer)[-15:]).strip()
+                err_msg = f"FFmpeg process exited with code {rc}"
+                if tail:
+                    err_msg += f".\nFFmpeg stderr:\n{tail}"
+                raise RuntimeError(err_msg)
 
             if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
                 raise RuntimeError("Output file was not generated or is empty.")
