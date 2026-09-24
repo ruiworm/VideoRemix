@@ -534,6 +534,19 @@ class VideoRemixApp:
 
         tk.Button(
             toolbar,
+            text="⚡ 抖音视频解析...",
+            command=self._open_douyin_parser,
+            font=(self.font_family, 9, "bold"),
+            bg="#fab387",
+            fg="#11111b",
+            relief=tk.FLAT,
+            padx=10,
+            pady=6,
+            cursor="hand2",
+        ).pack(side=tk.LEFT, padx=(0, 8))
+
+        tk.Button(
+            toolbar,
             text="📂 打开输出目录",
             command=self._open_output_dir,
             font=(self.font_family, 9),
@@ -712,6 +725,45 @@ class VideoRemixApp:
             self._insert_task_to_tree(t)
 
         self.global_status_var.set(f"已就绪: 从目录添加了 {len(added)} 个视频任务")
+
+    def _add_single_video_file(self, file_path: str):
+        if not file_path or not os.path.exists(file_path):
+            return
+        out_base = self.output_dir_var.get().strip() or None
+        mode = PresetMode(self.preset_var.get())
+        custom_opts = self._get_current_custom_opts() if mode == PresetMode.CUSTOM else {}
+        if bool(self.randomize_var.get()):
+            custom_opts["randomize"] = True
+
+        variants = max(1, min(5, int(self.variants_var.get())))
+        p_in = Path(file_path)
+        out_path = None
+        if out_base:
+            target = Path(out_base) / p_in.name
+            try:
+                is_same = target.resolve() == p_in.resolve()
+            except Exception:
+                is_same = os.path.abspath(str(target)) == os.path.abspath(str(p_in))
+            if is_same:
+                target = Path(out_base) / f"{p_in.stem}_remix{p_in.suffix}"
+            out_path = str(target)
+
+        res = self.queue_manager.add_task(str(p_in), output_path=out_path, preset=mode, variants=variants, **custom_opts)
+        if isinstance(res, list):
+            for t in res:
+                self._insert_task_to_tree(t)
+        else:
+            self._insert_task_to_tree(res)
+
+        self.global_status_var.set(f"已就绪: 从抖音解析器导入了 1 个视频 (当前队列共 {len(self.queue_manager.tasks)} 个)")
+
+    def _open_douyin_parser(self):
+        try:
+            from videoremix.ingest.gui import DouyinParserApp
+            top = tk.Toplevel(self.root)
+            DouyinParserApp(top, on_import_callback=self._add_single_video_file)
+        except Exception as e:
+            messagebox.showerror("打开解析器失败", f"无法打开抖音解析器:\n{e}")
 
     def _format_preset(self, task: RemediationTask) -> str:
         if task.preset == PresetMode.CUSTOM:

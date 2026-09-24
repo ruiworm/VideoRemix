@@ -34,6 +34,7 @@ def main():
     parser.add_argument("--force-cpu", action="store_true", help="Force software CPU libx264 encoding")
     parser.add_argument("--web", action="store_true", help="Launch local Web UI console in browser (recommended for WSL)")
     parser.add_argument("--gui", action="store_true", help="Launch desktop GUI window")
+    parser.add_argument("--parser", action="store_true", help="Launch dedicated Douyin video parser & downloader GUI")
 
     # Custom options
     custom_grp = parser.add_argument_group("Custom Options (when --preset custom)")
@@ -47,6 +48,11 @@ def main():
     parser.add_argument("-v", "--version", action="version", version=f"VideoRemix v{__version__}")
 
     args = parser.parse_args()
+
+    if args.parser:
+        from videoremix.ingest.gui import main as parser_main
+        parser_main()
+        return
 
     if args.web:
         from videoremix.ui.web import main as web_main

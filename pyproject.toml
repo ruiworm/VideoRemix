@@ -24,6 +24,7 @@ videoremix = "videoremix.cli:main"
 videoremix-gui = "videoremix.ui.app:main"
 videoremix-web = "videoremix.ui.web:main"
 videoremix-launcher = "videoremix.launcher:main"
+videoremix-parser = "videoremix.ingest.gui:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
