@@ -1,4 +1,4 @@
 """VideoRemix: Next-generation intelligent video deduplication and remediation engine."""
 
-__version__ = "1.0.4"
+__version__ = "1.1.0"
 __author__ = "Antigravity Team"

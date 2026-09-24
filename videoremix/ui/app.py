@@ -1,6 +1,7 @@
 """Modern, responsive desktop GUI for VideoRemix."""
 
 import os
+import subprocess
 import sys
 import threading
 import tkinter as tk
@@ -96,6 +97,12 @@ class VideoRemixApp:
         self.custom_eq_var = tk.BooleanVar(value=True)
         self.custom_noise_var = tk.BooleanVar(value=True)
         self.custom_mask_var = tk.BooleanVar(value=False)
+        self.custom_trim_start_var = tk.DoubleVar(value=0.8)
+        self.custom_trim_end_var = tk.DoubleVar(value=0.5)
+
+        # Matrix裂变与随机化
+        self.variants_var = tk.IntVar(value=1)
+        self.randomize_var = tk.BooleanVar(value=True)
 
         self._task_tree_items: Dict[str, str] = {}  # task_id -> treeview iid
 
@@ -364,6 +371,26 @@ class VideoRemixApp:
             font=(self.font_family, 8), fg="#cdd6f4", bg="#252538", selectcolor="#313244", activebackground="#252538"
         ).grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=1)
 
+        # 5. Trim Head & Tail row
+        trim_frame = tk.Frame(self.custom_panel, bg="#252538")
+        trim_frame.pack(fill=tk.X, pady=(4, 2))
+
+        th_box = tk.Frame(trim_frame, bg="#252538")
+        th_box.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        tk.Label(th_box, text="片头截断(秒):", font=(self.font_family, 8), fg="#cdd6f4", bg="#252538").pack(anchor=tk.W)
+        tk.Spinbox(
+            th_box, from_=0.0, to=5.0, increment=0.1, textvariable=self.custom_trim_start_var, width=5,
+            font=(self.font_family, 8), bg="#181825", fg="#cdd6f4", relief=tk.FLAT
+        ).pack(anchor=tk.W, pady=2)
+
+        te_box = tk.Frame(trim_frame, bg="#252538")
+        te_box.pack(side=tk.RIGHT, fill=tk.X, expand=True)
+        tk.Label(te_box, text="片尾截断(秒):", font=(self.font_family, 8), fg="#cdd6f4", bg="#252538").pack(anchor=tk.W)
+        tk.Spinbox(
+            te_box, from_=0.0, to=5.0, increment=0.1, textvariable=self.custom_trim_end_var, width=5,
+            font=(self.font_family, 8), bg="#181825", fg="#cdd6f4", relief=tk.FLAT
+        ).pack(anchor=tk.W, pady=2)
+
         # Output Directory Settings
         tk.Label(
             parent,
@@ -374,7 +401,7 @@ class VideoRemixApp:
         ).pack(anchor=tk.W, pady=(0, 4))
 
         out_frame = tk.Frame(parent, bg="#252538")
-        out_frame.pack(fill=tk.X, pady=(0, 15))
+        out_frame.pack(fill=tk.X, pady=(0, 10))
 
         out_entry = tk.Entry(
             out_frame,
@@ -385,7 +412,7 @@ class VideoRemixApp:
             insertbackground="#cdd6f4",
             relief=tk.FLAT,
         )
-        out_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=4, padx=(0, 6))
+        out_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=4, padx=(0, 4))
 
         tk.Button(
             out_frame,
@@ -395,32 +422,54 @@ class VideoRemixApp:
             bg="#45475a",
             fg="#cdd6f4",
             relief=tk.FLAT,
-            padx=8,
+            padx=6,
+            cursor="hand2",
+        ).pack(side=tk.LEFT, padx=(0, 4))
+
+        tk.Button(
+            out_frame,
+            text="打开",
+            command=self._open_output_dir,
+            font=(self.font_family, 8),
+            bg="#313244",
+            fg="#89b4fa",
+            relief=tk.FLAT,
+            padx=6,
             cursor="hand2",
         ).pack(side=tk.RIGHT)
 
-        # Concurrency
-        workers_frame = tk.Frame(parent, bg="#252538")
-        workers_frame.pack(fill=tk.X, pady=(0, 20))
-        tk.Label(
-            workers_frame,
-            text="并行任务数:",
-            font=(self.font_family, 9),
-            fg="#cdd6f4",
+        # Matrix Multiplier & Concurrency Card
+        matrix_card = tk.LabelFrame(
+            parent,
+            text=" 🎲 矩阵裂变与并发 ",
+            font=(self.font_family, 8, "bold"),
+            fg="#cba6f7",
             bg="#252538",
-        ).pack(side=tk.LEFT)
-        spin = tk.Spinbox(
-            workers_frame,
-            from_=1,
-            to=8,
-            textvariable=self.workers_var,
-            width=5,
-            font=(self.font_family, 9),
-            bg="#181825",
-            fg="#cdd6f4",
-            relief=tk.FLAT,
+            padx=int(8 * self.scale),
+            pady=int(6 * self.scale),
         )
-        spin.pack(side=tk.RIGHT)
+        matrix_card.pack(fill=tk.X, pady=(0, 14))
+
+        mc_row1 = tk.Frame(matrix_card, bg="#252538")
+        mc_row1.pack(fill=tk.X, pady=2)
+        tk.Label(mc_row1, text="变体裂变数 (1变N):", font=(self.font_family, 8), fg="#cdd6f4", bg="#252538").pack(side=tk.LEFT)
+        tk.Spinbox(
+            mc_row1, from_=1, to=5, textvariable=self.variants_var, width=4,
+            font=(self.font_family, 8, "bold"), bg="#181825", fg="#a6e3a1", relief=tk.FLAT
+        ).pack(side=tk.RIGHT)
+
+        mc_row2 = tk.Frame(matrix_card, bg="#252538")
+        mc_row2.pack(fill=tk.X, pady=2)
+        tk.Label(mc_row2, text="并行处理数 (线程):", font=(self.font_family, 8), fg="#cdd6f4", bg="#252538").pack(side=tk.LEFT)
+        tk.Spinbox(
+            mc_row2, from_=1, to=8, textvariable=self.workers_var, width=4,
+            font=(self.font_family, 8), bg="#181825", fg="#cdd6f4", relief=tk.FLAT
+        ).pack(side=tk.RIGHT)
+
+        tk.Checkbutton(
+            matrix_card, text="参数区间微扰 (防批量同质化)", variable=self.randomize_var,
+            font=(self.font_family, 8), fg="#a6adc8", bg="#252538", selectcolor="#313244", activebackground="#252538"
+        ).pack(anchor=tk.W, pady=(2, 0))
 
         # Primary Action Buttons
         self.start_btn = tk.Button(
@@ -479,6 +528,19 @@ class VideoRemixApp:
             fg="#cdd6f4",
             relief=tk.FLAT,
             padx=12,
+            pady=6,
+            cursor="hand2",
+        ).pack(side=tk.LEFT, padx=(0, 8))
+
+        tk.Button(
+            toolbar,
+            text="📂 打开输出目录",
+            command=self._open_output_dir,
+            font=(self.font_family, 9),
+            bg="#313244",
+            fg="#89b4fa",
+            relief=tk.FLAT,
+            padx=10,
             pady=6,
             cursor="hand2",
         ).pack(side=tk.LEFT, padx=(0, 8))
@@ -561,12 +623,36 @@ class VideoRemixApp:
             "equalizer": bool(self.custom_eq_var.get()),
             "noise_floor": bool(self.custom_noise_var.get()),
             "subtitle_mask": bool(self.custom_mask_var.get()),
+            "trim_start": round(float(self.custom_trim_start_var.get()), 2),
+            "trim_end": round(float(self.custom_trim_end_var.get()), 2),
+            "randomize": bool(self.randomize_var.get()),
         }
 
     def _browse_output_dir(self):
         d = filedialog.askdirectory(title="选择输出保存目录")
         if d:
             self.output_dir_var.set(d)
+
+    def _open_output_dir(self):
+        target = self.output_dir_var.get().strip()
+        if not target:
+            target = os.getcwd()
+        if not os.path.exists(target):
+            try:
+                os.makedirs(target, exist_ok=True)
+            except Exception as e:
+                messagebox.showwarning("提示", f"无法创建输出目录: {e}")
+                return
+
+        try:
+            if sys.platform == "win32":
+                os.startfile(target)
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", target])
+            else:
+                subprocess.Popen(["xdg-open", target])
+        except Exception as e:
+            messagebox.showwarning("提示", f"打开输出目录失败: {e}")
 
     def _add_files(self):
         paths = filedialog.askopenfilenames(
@@ -579,6 +665,10 @@ class VideoRemixApp:
         out_base = self.output_dir_var.get().strip() or None
         mode = PresetMode(self.preset_var.get())
         custom_opts = self._get_current_custom_opts() if mode == PresetMode.CUSTOM else {}
+        if bool(self.randomize_var.get()):
+            custom_opts["randomize"] = True
+
+        variants = max(1, min(5, int(self.variants_var.get())))
 
         for p in paths:
             out_path = None
@@ -593,8 +683,12 @@ class VideoRemixApp:
                     target = Path(out_base) / f"{p_in.stem}_remix{p_in.suffix}"
                 out_path = str(target)
 
-            task = self.queue_manager.add_task(p, output_path=out_path, preset=mode, **custom_opts)
-            self._insert_task_to_tree(task)
+            res = self.queue_manager.add_task(p, output_path=out_path, preset=mode, variants=variants, **custom_opts)
+            if isinstance(res, list):
+                for t in res:
+                    self._insert_task_to_tree(t)
+            else:
+                self._insert_task_to_tree(res)
 
         self.global_status_var.set(f"已就绪: 当前队列共有 {len(self.queue_manager.tasks)} 个任务")
 
@@ -606,8 +700,14 @@ class VideoRemixApp:
         out_base = self.output_dir_var.get().strip() or None
         mode = PresetMode(self.preset_var.get())
         custom_opts = self._get_current_custom_opts() if mode == PresetMode.CUSTOM else {}
+        if bool(self.randomize_var.get()):
+            custom_opts["randomize"] = True
 
-        added = self.queue_manager.add_directory(folder, output_dir=out_base, preset=mode, **custom_opts)
+        variants = max(1, min(5, int(self.variants_var.get())))
+
+        added = self.queue_manager.add_directory(
+            folder, output_dir=out_base, preset=mode, variants=variants, **custom_opts
+        )
         for t in added:
             self._insert_task_to_tree(t)
 

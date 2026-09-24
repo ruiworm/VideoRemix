@@ -110,7 +110,34 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
                 <div class="form-group">
                     <label>输出路径 (可选，留空默认在原目录输出)</label>
-                    <input type="text" id="outputPath" class="input-text" placeholder="/path/to/output.mp4 或目录">
+                    <div style="display:flex; gap:6px;">
+                        <input type="text" id="outputPath" class="input-text" style="flex:1;" placeholder="/path/to/output.mp4 或目录">
+                        <button class="btn btn-secondary" style="padding:0 12px; white-space:nowrap;" onclick="openOutputDir()">📂 打开</button>
+                    </div>
+                </div>
+
+                <!-- Matrix Multiplier & Randomization Card -->
+                <div style="background: rgba(203, 166, 247, 0.08); border: 1px solid rgba(203, 166, 247, 0.3); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px;">
+                    <div style="font-size: 13px; font-weight: 600; color: #cba6f7; display: flex; align-items: center; justify-content: space-between;">
+                        <span>🎲 矩阵裂变与微扰防重</span>
+                        <span style="font-size: 11px; background: rgba(203, 166, 247, 0.2); color: #cba6f7; padding: 2px 6px; border-radius: 4px;">v1.1.0 核心</span>
+                    </div>
+                    
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <label style="font-size: 12px; color: var(--text-muted);">变体裂变数 (1变N):</label>
+                        <select id="variantsSelect" style="padding: 4px 8px; font-size: 12px; font-weight: bold; color: var(--accent-green); background: var(--bg-base); border: 1px solid var(--border); border-radius: 6px;">
+                            <option value="1" selected>1 变 1 (标准)</option>
+                            <option value="2">1 变 2 (双重变体)</option>
+                            <option value="3">1 变 3 (三重变体)</option>
+                            <option value="4">1 变 4 (四重变体)</option>
+                            <option value="5">1 变 5 (五重裂变)</option>
+                        </select>
+                    </div>
+
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; color: var(--text-main);">
+                        <input type="checkbox" id="randomizeCheck" checked>
+                        <span>参数区间微扰 (防批量同质化，每次生成数学指纹独一无二)</span>
+                    </label>
                 </div>
 
                 <div class="form-group">
@@ -144,6 +171,17 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                             <span id="speedVal" style="color:var(--accent-green); font-weight:bold;">1.018x</span>
                         </div>
                         <input type="range" id="customSpeed" min="0.950" max="1.100" step="0.005" value="1.018" oninput="document.getElementById('speedVal').innerText = parseFloat(this.value).toFixed(3) + 'x'">
+                    </div>
+
+                    <div style="display:flex; gap:10px;">
+                        <div class="form-group" style="flex:1;">
+                            <label style="font-size:12px;">片头截断 (秒)</label>
+                            <input type="number" id="customTrimStart" min="0" max="5.0" step="0.1" value="0.8" class="input-text" style="padding:6px 10px;">
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label style="font-size:12px;">片尾截断 (秒)</label>
+                            <input type="number" id="customTrimEnd" min="0" max="5.0" step="0.1" value="0.5" class="input-text" style="padding:6px 10px;">
+                        </div>
                     </div>
 
                     <div style="display:flex; gap:10px;">
@@ -282,11 +320,26 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
             }
         }
 
+        async function openOutputDir() {
+            const output = document.getElementById('outputPath').value.trim();
+            const res = await fetch('/api/open_folder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ folder: output })
+            });
+            const data = await res.json();
+            if (data.error) {
+                alert('打开目录失败: ' + data.error);
+            }
+        }
+
         async function addTask() {
             const input = document.getElementById('inputPath').value.trim();
             const output = document.getElementById('outputPath').value.trim();
             const preset = document.getElementById('presetSelect').value;
             const workers = parseInt(document.getElementById('workersSelect').value, 10);
+            const variants = parseInt(document.getElementById('variantsSelect').value, 10) || 1;
+            const randomize = document.getElementById('randomizeCheck').checked;
 
             if (!input) {
                 alert('请输入视频文件或目录路径！');
@@ -305,14 +358,21 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                     color_grade: document.getElementById('customColor').checked,
                     equalizer: document.getElementById('customEq').checked,
                     subtitle_mask: document.getElementById('customMask').checked,
+                    trim_start: parseFloat(document.getElementById('customTrimStart').value) || 0.0,
+                    trim_end: parseFloat(document.getElementById('customTrimEnd').value) || 0.0,
+                    randomize: randomize,
                     noise_floor: true
                 };
+            } else {
+                if (randomize) {
+                    custom_opts.randomize = true;
+                }
             }
 
             const res = await fetch('/api/tasks/add', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ input, output, preset, workers, custom_opts })
+                body: JSON.stringify({ input, output, preset, workers, variants, randomize, custom_opts })
             });
             const data = await res.json();
             if (data.error) {
@@ -442,17 +502,60 @@ class WebUIServer:
                     }
                     p_mode = preset_map.get(preset_val, PresetMode.BALANCED_REMIX)
                     custom_opts = req.get("custom_opts", {}) if p_mode == PresetMode.CUSTOM else {}
+                    variants = max(1, min(5, int(req.get("variants", 1))))
+                    if bool(req.get("randomize", True)):
+                        custom_opts["randomize"] = True
 
                     if not os.path.exists(inp):
                         self._json_res({"error": f"路径不存在: {inp}"}, status=400)
                         return
 
                     if os.path.isdir(inp):
-                        added = parent.queue_manager.add_directory(inp, output_dir=out, preset=p_mode, **custom_opts)
+                        added = parent.queue_manager.add_directory(
+                            inp, output_dir=out, preset=p_mode, variants=variants, **custom_opts
+                        )
                         self._json_res({"success": True, "added": len(added)})
                     else:
-                        task = parent.queue_manager.add_task(inp, output_path=out, preset=p_mode, **custom_opts)
-                        self._json_res({"success": True, "task_id": task.task_id})
+                        res = parent.queue_manager.add_task(
+                            inp, output_path=out, preset=p_mode, variants=variants, **custom_opts
+                        )
+                        if isinstance(res, list):
+                            self._json_res({"success": True, "added": len(res)})
+                        else:
+                            self._json_res({"success": True, "task_id": res.task_id})
+
+                elif parsed.path == "/api/open_folder":
+                    folder = req.get("folder", "").strip() or os.getcwd()
+                    if not os.path.exists(folder):
+                        try:
+                            os.makedirs(folder, exist_ok=True)
+                        except Exception as e:
+                            self._json_res({"error": f"无法创建目录: {e}"}, status=400)
+                            return
+
+                    opened = False
+                    if "microsoft" in platform.uname().release.lower() or os.path.exists("/proc/sys/fs/binfmt_misc/WSLInterop"):
+                        try:
+                            wpath = subprocess.check_output(["wslpath", "-w", folder], text=True).strip()
+                            subprocess.run(["explorer.exe", wpath], check=False)
+                            opened = True
+                        except Exception:
+                            pass
+
+                    if not opened:
+                        try:
+                            if sys.platform == "win32":
+                                os.startfile(folder)
+                            elif sys.platform == "darwin":
+                                subprocess.Popen(["open", folder])
+                            else:
+                                subprocess.Popen(["xdg-open", folder])
+                            opened = True
+                        except Exception as e:
+                            self._json_res({"error": f"打开失败: {e}"}, status=500)
+                            return
+
+                    self._json_res({"success": True})
 
                 elif parsed.path == "/api/tasks/start":
                     workers = int(req.get("workers", parent.queue_manager.max_workers))

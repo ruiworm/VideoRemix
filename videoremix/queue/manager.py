@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import threading
 import time
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 from videoremix.core.executor import ExecutionCancelledError, FFmpegExecutor
 from videoremix.core.filtergraph import FilterGraphBuilder
 from videoremix.core.hardware import HardwareDetector
@@ -40,34 +40,69 @@ class BatchQueueManager:
         input_path: str,
         output_path: Optional[str] = None,
         preset: PresetMode = PresetMode.BALANCED_REMIX,
+        variants: int = 1,
         **custom_opts,
-    ) -> RemediationTask:
-        """Add a single file task to the queue."""
-        if not output_path:
-            p = Path(input_path)
-            output_path = str(p.parent / f"{p.stem}_remix{p.suffix}")
-        else:
-            p_in = Path(input_path)
-            p_out = Path(output_path)
-            try:
-                is_same = p_in.resolve() == p_out.resolve()
-            except Exception:
-                is_same = os.path.abspath(str(p_in)) == os.path.abspath(str(p_out))
-            if is_same:
-                output_path = str(p_out.parent / f"{p_in.stem}_remix{p_in.suffix}")
+    ) -> Any:
+        """Add a single file task (or multiple variant tasks) to the queue."""
+        p_in = Path(input_path)
 
-        task = RemediationTask(
-            input_path=os.path.abspath(input_path),
-            output_path=os.path.abspath(output_path),
-            preset=preset,
-            custom_opts=custom_opts,
-        )
-        with self._lock:
-            self.tasks.append(task)
-            self._task_map[task.task_id] = task
+        if variants <= 1:
+            if not output_path:
+                target_out = str(p_in.parent / f"{p_in.stem}_remix{p_in.suffix}")
+            else:
+                p_out = Path(output_path)
+                try:
+                    is_same = p_in.resolve() == p_out.resolve()
+                except Exception:
+                    is_same = os.path.abspath(str(p_in)) == os.path.abspath(str(p_out))
+                if is_same:
+                    target_out = str(p_out.parent / f"{p_in.stem}_remix{p_in.suffix}")
+                else:
+                    target_out = str(p_out)
 
-        self._notify_update(task)
-        return task
+            task = RemediationTask(
+                input_path=os.path.abspath(input_path),
+                output_path=os.path.abspath(target_out),
+                preset=preset,
+                custom_opts=custom_opts,
+            )
+            with self._lock:
+                self.tasks.append(task)
+                self._task_map[task.task_id] = task
+
+            self._notify_update(task)
+            return task
+
+        # Multi-variant generation (1 -> N variants with randomized parameters)
+        variant_tasks: List[RemediationTask] = []
+        for i in range(1, variants + 1):
+            if not output_path:
+                v_out = str(p_in.parent / f"{p_in.stem}_v{i}_remix{p_in.suffix}")
+            else:
+                p_out = Path(output_path)
+                stem = p_out.stem
+                if stem.endswith("_remix"):
+                    stem = stem[:-6]
+                v_out = str(p_out.parent / f"{stem}_v{i}_remix{p_out.suffix}")
+
+            v_opts = dict(custom_opts)
+            v_opts["randomize"] = True  # Guarantee unique fingerprint per variant
+            v_opts["variant_index"] = i
+
+            v_task = RemediationTask(
+                input_path=os.path.abspath(input_path),
+                output_path=os.path.abspath(v_out),
+                preset=preset,
+                custom_opts=v_opts,
+            )
+            with self._lock:
+                self.tasks.append(v_task)
+                self._task_map[v_task.task_id] = v_task
+
+            self._notify_update(v_task)
+            variant_tasks.append(v_task)
+
+        return variant_tasks
 
     def add_directory(
         self,
@@ -75,6 +110,7 @@ class BatchQueueManager:
         output_dir: Optional[str] = None,
         preset: PresetMode = PresetMode.BALANCED_REMIX,
         recursive: bool = False,
+        variants: int = 1,
         **custom_opts,
     ) -> List[RemediationTask]:
         """Scan a directory and enqueue all supported media files."""
@@ -92,8 +128,11 @@ class BatchQueueManager:
                     continue  # Skip files in the output directory
                 rel = p.relative_to(input_path)
                 target = out_base / rel
-                task = self.add_task(str(p), str(target), preset=preset, **custom_opts)
-                added.append(task)
+                res = self.add_task(str(p), str(target), preset=preset, variants=variants, **custom_opts)
+                if isinstance(res, list):
+                    added.extend(res)
+                else:
+                    added.append(res)
 
         return added
 

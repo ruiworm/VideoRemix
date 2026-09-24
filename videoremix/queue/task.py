@@ -36,7 +36,14 @@ class RemediationTask:
 
     @property
     def filename(self) -> str:
-        return os.path.basename(self.input_path)
+        base = os.path.basename(self.input_path)
+        if self.custom_opts and self.custom_opts.get("variant_index"):
+            return f"{base} [v{self.custom_opts['variant_index']}]"
+        return base
+
+    @property
+    def output_filename(self) -> str:
+        return os.path.basename(self.output_path)
 
     @property
     def duration_elapsed(self) -> float:

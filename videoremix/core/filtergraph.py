@@ -73,6 +73,35 @@ class FilterGraphBuilder:
         self.video_filters.append(f)
         return self
 
+    def add_trim(self, trim_start: float = 0.0, trim_end: float = 0.0) -> "FilterGraphBuilder":
+        """Trim leading and/or trailing seconds to break canonical keyframe matching."""
+        if trim_start <= 0.0 and trim_end <= 0.0:
+            return self
+
+        dur = self.info.duration
+        if dur > 0 and (trim_start + trim_end >= dur - 0.5):
+            trim_start = min(trim_start, dur * 0.1)
+            trim_end = min(trim_end, dur * 0.1)
+
+        v_parts = []
+        a_parts = []
+        if trim_start > 0:
+            v_parts.append(f"start={trim_start:.3f}")
+            a_parts.append(f"start={trim_start:.3f}")
+        if trim_end > 0 and dur > (trim_start + trim_end):
+            end_sec = dur - trim_end
+            v_parts.append(f"end={end_sec:.3f}")
+            a_parts.append(f"end={end_sec:.3f}")
+
+        if v_parts and self.info.has_video:
+            v_filter = f"trim={':'.join(v_parts)},setpts=PTS-STARTPTS"
+            self.video_filters.insert(0, v_filter)
+        if a_parts and self.info.has_audio:
+            a_filter = f"atrim={':'.join(a_parts)},asetpts=PTS-STARTPTS"
+            self.audio_filters.insert(0, a_filter)
+
+        return self
+
     # ------------------ Audio Transformations ------------------
 
     def add_pitch_shift(self, semitones: float = 0.25) -> "FilterGraphBuilder":
