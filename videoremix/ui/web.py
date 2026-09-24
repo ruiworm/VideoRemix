@@ -119,10 +119,50 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                         <option value="balanced" selected>强效去重 (自媒体矩阵推荐)</option>
                         <option value="quality">画质保真 (高保真原创推荐)</option>
                         <option value="pip">智能画中画 (高斯模糊背景)</option>
+                        <option value="custom">自定义: 详细参数调节</option>
                     </select>
                 </div>
 
                 <div class="preset-desc" id="presetDesc">加载中...</div>
+
+                <!-- Custom Options Subpanel -->
+                <div id="customSettings" style="display: none; background: var(--bg-card); padding: 12px; border-radius: 8px; border: 1px solid var(--border); flex-direction: column; gap: 10px;">
+                    <div style="font-size: 13px; font-weight: 600; color: var(--accent);">⚙️ 自定义参数配置</div>
+                    
+                    <div class="form-group">
+                        <div style="display:flex; justify-content:space-between; font-size:12px;">
+                            <label>画幅微缩放 (Zoom)</label>
+                            <span id="zoomVal" style="color:var(--accent-green); font-weight:bold;">1.02x</span>
+                        </div>
+                        <input type="range" id="customZoom" min="1.00" max="1.15" step="0.01" value="1.02" oninput="document.getElementById('zoomVal').innerText = parseFloat(this.value).toFixed(2) + 'x'">
+                    </div>
+
+                    <div class="form-group">
+                        <div style="display:flex; justify-content:space-between; font-size:12px;">
+                            <label>音画变速比 (Speed)</label>
+                            <span id="speedVal" style="color:var(--accent-green); font-weight:bold;">1.018x</span>
+                        </div>
+                        <input type="range" id="customSpeed" min="0.950" max="1.100" step="0.005" value="1.018" oninput="document.getElementById('speedVal').innerText = parseFloat(this.value).toFixed(3) + 'x'">
+                    </div>
+
+                    <div style="display:flex; gap:10px;">
+                        <div class="form-group" style="flex:1;">
+                            <label style="font-size:12px;">胶片噪点 (0-10)</label>
+                            <input type="number" id="customGrain" min="0" max="10" value="3" class="input-text" style="padding:6px 10px;">
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label style="font-size:12px;">音频微变调 (半音)</label>
+                            <input type="number" id="customPitch" min="-2.0" max="2.0" step="0.05" value="0.25" class="input-text" style="padding:6px 10px;">
+                        </div>
+                    </div>
+
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px; margin-top: 4px;">
+                        <label style="display:flex; align-items:center; gap:6px; cursor:pointer;"><input type="checkbox" id="customHflip"> 镜像翻转</label>
+                        <label style="display:flex; align-items:center; gap:6px; cursor:pointer;"><input type="checkbox" id="customPip"> 画中画模式</label>
+                        <label style="display:flex; align-items:center; gap:6px; cursor:pointer;"><input type="checkbox" id="customColor" checked> 自然调色</label>
+                        <label style="display:flex; align-items:center; gap:6px; cursor:pointer;"><input type="checkbox" id="customEq" checked> 声学重构</label>
+                    </div>
+                </div>
 
                 <div class="form-group">
                     <label>并行处理线程数</label>
@@ -177,12 +217,19 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         const PRESETS = {
             "balanced": "【强效去重】微平移缩放 (1.02x) + 同步变速 (1.018x) + 音高微调 + 均衡重构 + 胶片微噪点（音画严格对齐）",
             "quality": "【画质保真】轻量色彩调优 + 微变调 + 底噪混入 + 胶片微噪点（零观感破坏）",
-            "pip": "【智能画中画】90% 居中原画 + 动态高斯模糊背景 + 全面声学指纹重塑（强力变体）"
+            "pip": "【智能画中画】90% 居中原画 + 动态高斯模糊背景 + 全面声学指纹重塑（强力变体）",
+            "custom": "【自定义模式】自由配置缩放比例、变速比率、胶片噪点、变调以及滤镜开关"
         };
 
         function updatePresetDesc() {
             const val = document.getElementById('presetSelect').value;
             document.getElementById('presetDesc').innerText = PRESETS[val] || '';
+            const customDiv = document.getElementById('customSettings');
+            if (val === 'custom') {
+                customDiv.style.display = 'flex';
+            } else {
+                customDiv.style.display = 'none';
+            }
         }
         updatePresetDesc();
 
@@ -243,10 +290,25 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
                 return;
             }
 
+            let custom_opts = {};
+            if (preset === 'custom') {
+                custom_opts = {
+                    zoom: parseFloat(document.getElementById('customZoom').value) || 1.0,
+                    speed: parseFloat(document.getElementById('customSpeed').value) || 1.0,
+                    grain: parseInt(document.getElementById('customGrain').value, 10) || 0,
+                    pitch: parseFloat(document.getElementById('customPitch').value) || 0.0,
+                    hflip: document.getElementById('customHflip').checked,
+                    pip: document.getElementById('customPip').checked,
+                    color_grade: document.getElementById('customColor').checked,
+                    equalizer: document.getElementById('customEq').checked,
+                    noise_floor: true
+                };
+            }
+
             const res = await fetch('/api/tasks/add', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ input, output, preset, workers })
+                body: JSON.stringify({ input, output, preset, workers, custom_opts })
             });
             const data = await res.json();
             if (data.error) {
@@ -314,11 +376,26 @@ class WebUIServer:
 
                     tasks_data = []
                     for t in parent.queue_manager.tasks:
+                        if t.preset == PresetMode.CUSTOM:
+                            opts = t.custom_opts or {}
+                            z = opts.get("zoom", 1.0)
+                            s = opts.get("speed", 1.0)
+                            preset_name = f"自定义 ({z:.2f}x/{s:.3f}x)"
+                        elif t.preset == PresetMode.BALANCED_REMIX:
+                            preset_name = "强效去重"
+                        elif t.preset == PresetMode.QUALITY_FIRST:
+                            preset_name = "画质保真"
+                        elif t.preset == PresetMode.SMART_PIP:
+                            preset_name = "智能画中画"
+                        else:
+                            preset_name = t.preset.value
+
                         tasks_data.append({
                             "id": t.task_id,
                             "filename": t.filename,
                             "input_path": t.input_path,
-                            "preset": t.preset.value,
+                            "preset": preset_name,
+                            "custom_opts": t.custom_opts,
                             "status": t.status.value,
                             "progress": t.progress,
                             "speed": t.speed,
@@ -354,18 +431,20 @@ class WebUIServer:
                         "quality": PresetMode.QUALITY_FIRST,
                         "balanced": PresetMode.BALANCED_REMIX,
                         "pip": PresetMode.SMART_PIP,
+                        "custom": PresetMode.CUSTOM,
                     }
                     p_mode = preset_map.get(preset_val, PresetMode.BALANCED_REMIX)
+                    custom_opts = req.get("custom_opts", {}) if p_mode == PresetMode.CUSTOM else {}
 
                     if not os.path.exists(inp):
                         self._json_res({"error": f"路径不存在: {inp}"}, status=400)
                         return
 
                     if os.path.isdir(inp):
-                        added = parent.queue_manager.add_directory(inp, output_dir=out, preset=p_mode)
+                        added = parent.queue_manager.add_directory(inp, output_dir=out, preset=p_mode, **custom_opts)
                         self._json_res({"success": True, "added": len(added)})
                     else:
-                        task = parent.queue_manager.add_task(inp, output_path=out, preset=p_mode)
+                        task = parent.queue_manager.add_task(inp, output_path=out, preset=p_mode, **custom_opts)
                         self._json_res({"success": True, "task_id": task.task_id})
 
                 elif parsed.path == "/api/tasks/start":

@@ -53,22 +53,34 @@ def apply_preset(
         builder.add_noise_floor()
 
     elif preset == PresetMode.CUSTOM:
-        if custom_opts.get("zoom", 1.0) > 1.0:
-            builder.add_subtle_crop_zoom(custom_opts["zoom"])
-        if custom_opts.get("grain", 0) > 0:
-            builder.add_film_grain(custom_opts["grain"])
+        zoom = float(custom_opts.get("zoom", 1.0))
+        if zoom > 1.0001:
+            builder.add_subtle_crop_zoom(zoom)
+
+        grain = int(custom_opts.get("grain", 0))
+        if grain > 0:
+            builder.add_film_grain(grain)
+
         if custom_opts.get("color_grade", False):
             builder.add_color_grade()
+
         if custom_opts.get("hflip", False):
             builder.add_mirror_hflip()
+
         if custom_opts.get("pip", False):
             builder.add_smart_pip()
-        if custom_opts.get("speed", 1.0) != 1.0:
-            builder.set_sync_speed(custom_opts["speed"])
-        if custom_opts.get("pitch_semitones", 0.0) != 0.0:
-            builder.add_pitch_shift(custom_opts["pitch_semitones"])
+
+        speed = float(custom_opts.get("speed", 1.0))
+        if abs(speed - 1.0) > 0.0001:
+            builder.set_sync_speed(speed)
+
+        pitch = float(custom_opts.get("pitch_semitones", custom_opts.get("pitch", 0.0)))
+        if abs(pitch) > 0.0001:
+            builder.add_pitch_shift(pitch)
+
         if custom_opts.get("equalizer", False):
             builder.add_equalizer()
+
         if custom_opts.get("noise_floor", False):
             builder.add_noise_floor()
 

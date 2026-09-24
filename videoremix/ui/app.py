@@ -5,7 +5,7 @@ import sys
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 # Ensure package path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -92,6 +92,9 @@ class VideoRemixApp:
         self.custom_pitch_var = tk.DoubleVar(value=0.25)
         self.custom_hflip_var = tk.BooleanVar(value=False)
         self.custom_pip_var = tk.BooleanVar(value=False)
+        self.custom_color_var = tk.BooleanVar(value=True)
+        self.custom_eq_var = tk.BooleanVar(value=True)
+        self.custom_noise_var = tk.BooleanVar(value=True)
 
         self._task_tree_items: Dict[str, str] = {}  # task_id -> treeview iid
 
@@ -152,10 +155,40 @@ class VideoRemixApp:
         content = tk.Frame(self.root, bg="#1e1e2e")
         content.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
 
-        # Left Column: Presets & Controls (Width 320 * scale)
-        left_panel = tk.Frame(content, bg="#252538", width=int(320 * self.scale), padx=14, pady=14)
-        left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 12))
-        left_panel.pack_propagate(False)
+        # Left Column: Presets & Controls with Smooth Scrollable Canvas
+        left_container = tk.Frame(content, bg="#252538", width=int(330 * self.scale))
+        left_container.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 12))
+        left_container.pack_propagate(False)
+
+        self.left_canvas = tk.Canvas(left_container, bg="#252538", highlightthickness=0)
+        left_scrollbar = ttk.Scrollbar(left_container, orient=tk.VERTICAL, command=self.left_canvas.yview)
+        left_panel = tk.Frame(self.left_canvas, bg="#252538", padx=10, pady=10)
+
+        left_panel.bind(
+            "<Configure>",
+            lambda e: self.left_canvas.configure(scrollregion=self.left_canvas.bbox("all")),
+        )
+
+        self._left_win = self.left_canvas.create_window((0, 0), window=left_panel, anchor="nw")
+
+        def _on_canvas_configure(e):
+            self.left_canvas.itemconfig(self._left_win, width=e.width)
+
+        self.left_canvas.bind("<Configure>", _on_canvas_configure)
+        self.left_canvas.configure(yscrollcommand=left_scrollbar.set)
+
+        self.left_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        def _on_mousewheel(event):
+            if event.delta:
+                self.left_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            elif getattr(event, "num", None) == 4:
+                self.left_canvas.yview_scroll(-1, "units")
+            elif getattr(event, "num", None) == 5:
+                self.left_canvas.yview_scroll(1, "units")
+
+        self.left_canvas.bind("<Enter>", lambda e: self.left_canvas.bind_all("<MouseWheel>", _on_mousewheel))
+        self.left_canvas.bind("<Leave>", lambda e: self.left_canvas.unbind_all("<MouseWheel>"))
 
         # Right Column: Task Queue Table & Log Output
         right_panel = tk.Frame(content, bg="#1e1e2e")
@@ -221,7 +254,108 @@ class VideoRemixApp:
             padx=8,
             pady=8,
         )
-        self.desc_lbl.pack(fill=tk.X, pady=(6, 15))
+        self.desc_lbl.pack(fill=tk.X, pady=(6, 12))
+
+        # Collapsible Custom Options Panel
+        self.custom_panel = tk.LabelFrame(
+            parent,
+            text=" ⚙️ 自定义参数配置 ",
+            font=(self.font_family, 8, "bold"),
+            fg="#89b4fa",
+            bg="#252538",
+            padx=int(8 * self.scale),
+            pady=int(6 * self.scale),
+        )
+
+        # 1. Zoom Slider
+        z_frame = tk.Frame(self.custom_panel, bg="#252538")
+        z_frame.pack(fill=tk.X, pady=(2, 0))
+        tk.Label(z_frame, text="画幅微缩放:", font=(self.font_family, 8), fg="#cdd6f4", bg="#252538").pack(side=tk.LEFT)
+        self.zoom_lbl = tk.Label(z_frame, text=f"{self.custom_zoom_var.get():.2f}x", font=(self.font_family, 8, "bold"), fg="#a6e3a1", bg="#252538")
+        self.zoom_lbl.pack(side=tk.RIGHT)
+        z_scale = tk.Scale(
+            self.custom_panel,
+            variable=self.custom_zoom_var,
+            from_=1.00,
+            to=1.15,
+            resolution=0.01,
+            orient=tk.HORIZONTAL,
+            showvalue=False,
+            bg="#181825",
+            fg="#cdd6f4",
+            troughcolor="#313244",
+            highlightthickness=0,
+            relief=tk.FLAT,
+            command=lambda v: self.zoom_lbl.config(text=f"{float(v):.2f}x"),
+        )
+        z_scale.pack(fill=tk.X, pady=(0, 4))
+
+        # 2. Speed Slider
+        s_frame = tk.Frame(self.custom_panel, bg="#252538")
+        s_frame.pack(fill=tk.X, pady=(2, 0))
+        tk.Label(s_frame, text="音画变速比:", font=(self.font_family, 8), fg="#cdd6f4", bg="#252538").pack(side=tk.LEFT)
+        self.speed_lbl = tk.Label(s_frame, text=f"{self.custom_speed_var.get():.3f}x", font=(self.font_family, 8, "bold"), fg="#a6e3a1", bg="#252538")
+        self.speed_lbl.pack(side=tk.RIGHT)
+        s_scale = tk.Scale(
+            self.custom_panel,
+            variable=self.custom_speed_var,
+            from_=0.950,
+            to=1.100,
+            resolution=0.005,
+            orient=tk.HORIZONTAL,
+            showvalue=False,
+            bg="#181825",
+            fg="#cdd6f4",
+            troughcolor="#313244",
+            highlightthickness=0,
+            relief=tk.FLAT,
+            command=lambda v: self.speed_lbl.config(text=f"{float(v):.3f}x"),
+        )
+        s_scale.pack(fill=tk.X, pady=(0, 4))
+
+        # 3. Grain & Pitch row
+        gp_frame = tk.Frame(self.custom_panel, bg="#252538")
+        gp_frame.pack(fill=tk.X, pady=2)
+
+        g_box = tk.Frame(gp_frame, bg="#252538")
+        g_box.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        tk.Label(g_box, text="胶片噪点:", font=(self.font_family, 8), fg="#cdd6f4", bg="#252538").pack(anchor=tk.W)
+        tk.Spinbox(
+            g_box, from_=0, to=10, textvariable=self.custom_grain_var, width=5,
+            font=(self.font_family, 8), bg="#181825", fg="#cdd6f4", relief=tk.FLAT
+        ).pack(anchor=tk.W, pady=2)
+
+        p_box = tk.Frame(gp_frame, bg="#252538")
+        p_box.pack(side=tk.RIGHT, fill=tk.X, expand=True)
+        tk.Label(p_box, text="变调(半音):", font=(self.font_family, 8), fg="#cdd6f4", bg="#252538").pack(anchor=tk.W)
+        tk.Spinbox(
+            p_box, from_=-2.0, to=2.0, increment=0.05, textvariable=self.custom_pitch_var, width=5,
+            font=(self.font_family, 8), bg="#181825", fg="#cdd6f4", relief=tk.FLAT
+        ).pack(anchor=tk.W, pady=2)
+
+        # 4. Checkbuttons for Effects
+        cb_grid = tk.Frame(self.custom_panel, bg="#252538")
+        cb_grid.pack(fill=tk.X, pady=(4, 0))
+
+        tk.Checkbutton(
+            cb_grid, text="镜像翻转", variable=self.custom_hflip_var,
+            font=(self.font_family, 8), fg="#cdd6f4", bg="#252538", selectcolor="#313244", activebackground="#252538"
+        ).grid(row=0, column=0, sticky=tk.W, pady=1)
+
+        tk.Checkbutton(
+            cb_grid, text="画中画模式", variable=self.custom_pip_var,
+            font=(self.font_family, 8), fg="#cdd6f4", bg="#252538", selectcolor="#313244", activebackground="#252538"
+        ).grid(row=0, column=1, sticky=tk.W, pady=1)
+
+        tk.Checkbutton(
+            cb_grid, text="自然调色", variable=self.custom_color_var,
+            font=(self.font_family, 8), fg="#cdd6f4", bg="#252538", selectcolor="#313244", activebackground="#252538"
+        ).grid(row=1, column=0, sticky=tk.W, pady=1)
+
+        tk.Checkbutton(
+            cb_grid, text="声学重构", variable=self.custom_eq_var,
+            font=(self.font_family, 8), fg="#cdd6f4", bg="#252538", selectcolor="#313244", activebackground="#252538"
+        ).grid(row=1, column=1, sticky=tk.W, pady=1)
 
         # Output Directory Settings
         tk.Label(
@@ -309,6 +443,8 @@ class VideoRemixApp:
         )
         self.stop_btn.pack(fill=tk.X)
 
+        self._on_preset_changed()
+
     def _build_right_queue(self, parent: tk.Frame):
         # Action Toolbar
         toolbar = tk.Frame(parent, bg="#1e1e2e")
@@ -395,8 +531,29 @@ class VideoRemixApp:
         try:
             mode = PresetMode(val)
             self.desc_lbl.config(text=PRESET_DESCRIPTIONS.get(mode, ""))
+            if mode == PresetMode.CUSTOM:
+                self.custom_panel.pack(fill=tk.X, pady=(0, 12), after=self.desc_lbl)
+            else:
+                self.custom_panel.pack_forget()
+            if hasattr(self, "left_canvas"):
+                self.left_canvas.update_idletasks()
+                self.left_canvas.configure(scrollregion=self.left_canvas.bbox("all"))
         except Exception:
             pass
+
+    def _get_current_custom_opts(self) -> Dict[str, Any]:
+        """Collect current values from custom settings controls."""
+        return {
+            "zoom": round(float(self.custom_zoom_var.get()), 3),
+            "speed": round(float(self.custom_speed_var.get()), 3),
+            "grain": int(self.custom_grain_var.get()),
+            "pitch": round(float(self.custom_pitch_var.get()), 2),
+            "hflip": bool(self.custom_hflip_var.get()),
+            "pip": bool(self.custom_pip_var.get()),
+            "color_grade": bool(self.custom_color_var.get()),
+            "equalizer": bool(self.custom_eq_var.get()),
+            "noise_floor": bool(self.custom_noise_var.get()),
+        }
 
     def _browse_output_dir(self):
         d = filedialog.askdirectory(title="选择输出保存目录")
@@ -413,6 +570,7 @@ class VideoRemixApp:
 
         out_base = self.output_dir_var.get().strip() or None
         mode = PresetMode(self.preset_var.get())
+        custom_opts = self._get_current_custom_opts() if mode == PresetMode.CUSTOM else {}
 
         for p in paths:
             out_path = None
@@ -427,7 +585,7 @@ class VideoRemixApp:
                     target = Path(out_base) / f"{p_in.stem}_remix{p_in.suffix}"
                 out_path = str(target)
 
-            task = self.queue_manager.add_task(p, output_path=out_path, preset=mode)
+            task = self.queue_manager.add_task(p, output_path=out_path, preset=mode, **custom_opts)
             self._insert_task_to_tree(task)
 
         self.global_status_var.set(f"已就绪: 当前队列共有 {len(self.queue_manager.tasks)} 个任务")
@@ -439,12 +597,26 @@ class VideoRemixApp:
 
         out_base = self.output_dir_var.get().strip() or None
         mode = PresetMode(self.preset_var.get())
+        custom_opts = self._get_current_custom_opts() if mode == PresetMode.CUSTOM else {}
 
-        added = self.queue_manager.add_directory(folder, output_dir=out_base, preset=mode)
+        added = self.queue_manager.add_directory(folder, output_dir=out_base, preset=mode, **custom_opts)
         for t in added:
             self._insert_task_to_tree(t)
 
         self.global_status_var.set(f"已就绪: 从目录添加了 {len(added)} 个视频任务")
+
+    def _format_preset(self, task: RemediationTask) -> str:
+        if task.preset == PresetMode.CUSTOM:
+            opts = task.custom_opts or {}
+            z = opts.get("zoom", 1.0)
+            s = opts.get("speed", 1.0)
+            return f"自定义 ({z:.2f}x/{s:.3f}x)"
+        mapping = {
+            PresetMode.QUALITY_FIRST: "画质保真",
+            PresetMode.BALANCED_REMIX: "强效去重",
+            PresetMode.SMART_PIP: "智能画中画",
+        }
+        return mapping.get(task.preset, task.preset.value)
 
     def _on_tree_double_click(self, event):
         item_id = self.tree.identify_row(event.y)
@@ -457,12 +629,30 @@ class VideoRemixApp:
                 target_task = task
                 break
 
-        if target_task and target_task.status == TaskStatus.FAILED:
+        if not target_task:
+            return
+
+        if target_task.status == TaskStatus.FAILED:
             err_msg = target_task.error_message or "未知错误信息"
             messagebox.showerror(
                 f"任务失败详情 - {target_task.filename}",
                 f"文件: {target_task.filename}\n\n错误信息:\n{err_msg}",
             )
+        else:
+            lines = [
+                f"文件名称: {target_task.filename}",
+                f"输入路径: {target_task.input_path}",
+                f"输出路径: {target_task.output_path}",
+                f"预设方案: {self._format_preset(target_task)}",
+                f"当前状态: {self._format_status(target_task.status)}",
+                f"完成进度: {target_task.progress:.1f}%",
+                f"当前转速: {target_task.speed}",
+            ]
+            if target_task.preset == PresetMode.CUSTOM and target_task.custom_opts:
+                lines.append("\n【自定义参数清单】:")
+                for k, v in target_task.custom_opts.items():
+                    lines.append(f"  • {k}: {v}")
+            messagebox.showinfo(f"任务详情 - {target_task.filename}", "\n".join(lines))
 
     def _insert_task_to_tree(self, task: RemediationTask):
         status_text = self._format_status(task.status)
@@ -471,7 +661,7 @@ class VideoRemixApp:
             tk.END,
             values=(
                 task.filename,
-                task.preset.value,
+                self._format_preset(task),
                 status_text,
                 f"{task.progress:.1f}%",
                 task.speed,
@@ -521,7 +711,7 @@ class VideoRemixApp:
             iid,
             values=(
                 task.filename,
-                task.preset.value,
+                self._format_preset(task),
                 status_text,
                 f"{task.progress:.1f}%",
                 task.speed,
