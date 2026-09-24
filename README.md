@@ -41,7 +41,7 @@
 
 ### 1. 快速安装
 ```bash
-git clone https://github.com/your-username/VideoRemix.git
+git clone https://github.com/ruiworm/VideoRemix.git
 cd VideoRemix
 
 # 推荐使用 uv 或 venv
@@ -50,15 +50,25 @@ source .venv/bin/activate  # Windows: .venv\Scripts\activate
 uv pip install -e .
 ```
 
-### 2. 启动现代桌面端 GUI
+### 2. 界面使用方式
+
+#### 方式 A：现代化桌面端 GUI (Tkinter 原生界面)
+适用于 Windows / macOS / 安装了中文字体的 Linux 桌面环境：
 ```bash
-# 直接运行 GUI 主界面
 python -m videoremix.ui.app
 # 或使用全局入口
 videoremix-gui
 ```
-* 支持多选视频或直接拖入整目录。
-* 支持多任务并行队列与独立进度监控。
+
+#### 方式 B：Web 浏览器控制台 (WSL2 / 无头服务器 / 跨平台免配置推荐)
+针对 WSL2 缺少中文字体库或 X11 兼容性问题，提供了极速轻量 Web 控制台，直接在宿主 Windows 浏览器中打开，告别字体渲染与编码困扰：
+```bash
+python -m videoremix.ui.web
+# 或使用全局入口
+videoremix-web
+```
+* 启动后会自动唤起浏览器打开 `http://127.0.0.1:8765`。
+* 纯标准库实现，零额外三方 Web 框架依赖。
 
 ### 3. 命令行批量自动化处理 (CLI)
 适合集成至自动化搬运、混剪矩阵流水线或云端批处理任务：
@@ -93,7 +103,8 @@ videoremix/
 │   ├── task.py              # 任务数据结构与生命周期状态机
 │   └── manager.py           # 线程池并发管理器
 ├── ui/                      # 现代化用户界面
-│   └── app.py               # 响应式自适应桌面客户端
+│   ├── app.py               # 响应式自适应桌面客户端 (Tkinter)
+│   └── web.py               # 轻量自适应 Web 控制台 (适配 WSL/无头环境)
 └── cli.py                   # 命令行主入口
 ```
 
