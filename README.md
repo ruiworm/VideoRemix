@@ -39,7 +39,16 @@
 
 ## 💻 安装与使用指南
 
-### 1. 快速安装
+### 0. 📦 免配置独立版直接运行（推荐普通用户 / Windows 创作者）
+无需安装 Python，也无需配置任何 FFmpeg 环境，直接前往 Releases 页面：
+👉 **[下载最新编译版 (GitHub Releases)](https://github.com/ruiworm/VideoRemix/releases)**
+
+* **Windows 用户**：下载 `VideoRemix-windows-x64.zip`，解压后双击 `VideoRemix.exe` 即可启动原生桌面 GUI！
+* **WSL / 命令行用户**：亦可在解压目录下运行 `VideoRemix --web` 开启浏览器控制台，或直接调用 CLI。
+
+---
+
+### 1. 源码与开发者安装
 ```bash
 git clone https://github.com/ruiworm/VideoRemix.git
 cd VideoRemix

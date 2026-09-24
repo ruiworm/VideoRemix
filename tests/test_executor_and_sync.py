@@ -5,11 +5,9 @@ from videoremix.core.filtergraph import FilterGraphBuilder
 from videoremix.core.presets import PresetMode, apply_preset
 from videoremix.core.probe import probe_media
 
-def test_transcode_and_sync():
-    input_file = "/home/vere/VideoRemix/sample.mp4"
-    output_file = "/home/vere/VideoRemix/test_sync_out.mp4"
-    if os.path.exists(output_file):
-        os.remove(output_file)
+def test_transcode_and_sync(sample_video, tmp_path):
+    input_file = sample_video
+    output_file = str(tmp_path / "test_sync_out.mp4")
 
     info = probe_media(input_file)
     builder = FilterGraphBuilder(info)

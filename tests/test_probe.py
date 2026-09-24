@@ -1,8 +1,8 @@
 import pytest
 from videoremix.core.probe import probe_media, MediaInfo
 
-def test_probe_media_sample():
-    info = probe_media("/home/vere/VideoRemix/sample.mp4")
+def test_probe_media_sample(sample_video):
+    info = probe_media(sample_video)
     assert isinstance(info, MediaInfo)
     assert info.has_video is True
     assert info.has_audio is True

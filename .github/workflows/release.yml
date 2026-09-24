@@ -1,0 +1,144 @@
+name: Release GUI & Binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag (e.g. v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: VideoRemix-Windows-x64
+            archive_name: VideoRemix-windows-x64.zip
+          - os: macos-latest
+            artifact_name: VideoRemix-macOS-Universal
+            archive_name: VideoRemix-macos-universal.tar.gz
+          - os: ubuntu-22.04
+            artifact_name: VideoRemix-Linux-x86_64
+            archive_name: VideoRemix-linux-x86_64.tar.gz
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install System Dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install imageio-ffmpeg pyinstaller
+          pip install -e .
+
+      - name: Bundle Executable & FFmpeg
+        shell: bash
+        run: |
+          pyinstaller --clean -y packaging/videoremix.spec
+
+          # Copy and bundle FFmpeg binary into dist/VideoRemix
+          python - << 'EOF'
+          import sys
+          import os
+          import shutil
+          import imageio_ffmpeg
+
+          src = imageio_ffmpeg.get_ffmpeg_exe()
+          dest_dir = os.path.join("dist", "VideoRemix")
+          os.makedirs(dest_dir, exist_ok=True)
+
+          # Copy primary binary name
+          dest_file = os.path.join(dest_dir, os.path.basename(src))
+          shutil.copy(src, dest_file)
+
+          # Guarantee alias ffmpeg.exe (Windows) or ffmpeg (Unix)
+          if os.name == "nt" or "win" in sys.platform.lower():
+              alias = os.path.join(dest_dir, "ffmpeg.exe")
+          else:
+              alias = os.path.join(dest_dir, "ffmpeg")
+          shutil.copy(src, alias)
+          if os.path.exists(alias) and os.name != "nt":
+              os.chmod(alias, 0o755)
+
+          # Write portable release notice
+          with open(os.path.join(dest_dir, "README_PORTABLE.txt"), "w", encoding="utf-8") as f:
+              f.write("VideoRemix Pro - Portable Standalone Edition\n")
+              f.write("============================================\n\n")
+              f.write("1. Double click VideoRemix / VideoRemix.exe to launch Desktop GUI.\n")
+              f.write("2. Run 'VideoRemix --web' to launch Browser Web Console.\n")
+              f.write("3. Run 'VideoRemix input.mp4 -o output.mp4 --preset balanced' for CLI.\n\n")
+              f.write("No Python or FFmpeg installation required. All dependencies are bundled.\n")
+          print(f"Successfully bundled FFmpeg to {alias}")
+          EOF
+
+      - name: Package Distributable Archive
+        shell: bash
+        run: |
+          cd dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a -tzip "../${{ matrix.archive_name }}" VideoRemix/*
+          else
+            tar -czvf "../${{ matrix.archive_name }}" VideoRemix/
+          fi
+          cd ..
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.archive_name }}
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release_assets
+          merge-multiple: true
+
+      - name: Determine Release Tag
+        id: get_tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create GitHub Release & Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.get_tag.outputs.tag }}
+          name: "VideoRemix Pro ${{ steps.get_tag.outputs.tag }}"
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: release_assets/*

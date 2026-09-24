@@ -6,11 +6,34 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from typing import Optional
 
 
 def get_ffmpeg_bin() -> str:
-    """Find FFmpeg binary from imageio_ffmpeg, system PATH, or local directory."""
+    """Find FFmpeg binary from PyInstaller bundle, imageio_ffmpeg, system PATH, or local directory."""
+    # 1. PyInstaller frozen binary bundle
+    if getattr(sys, "frozen", False):
+        candidates = []
+        if hasattr(sys, "_MEIPASS"):
+            candidates.extend([
+                os.path.join(sys._MEIPASS, "ffmpeg.exe"),
+                os.path.join(sys._MEIPASS, "ffmpeg"),
+                os.path.join(sys._MEIPASS, "bin", "ffmpeg.exe"),
+                os.path.join(sys._MEIPASS, "bin", "ffmpeg"),
+            ])
+        exe_dir = os.path.dirname(sys.executable)
+        candidates.extend([
+            os.path.join(exe_dir, "ffmpeg.exe"),
+            os.path.join(exe_dir, "ffmpeg"),
+            os.path.join(exe_dir, "bin", "ffmpeg.exe"),
+            os.path.join(exe_dir, "bin", "ffmpeg"),
+        ])
+        for cand in candidates:
+            if os.path.exists(cand):
+                return os.path.abspath(cand)
+
+    # 2. imageio-ffmpeg
     try:
         import imageio_ffmpeg
         exe = imageio_ffmpeg.get_ffmpeg_exe()
@@ -19,11 +42,12 @@ def get_ffmpeg_bin() -> str:
     except ImportError:
         pass
 
+    # 3. System PATH
     system_bin = shutil.which("ffmpeg")
     if system_bin:
         return system_bin
 
-    # Local fallback
+    # 4. Local fallback
     for candidate in ["./ffmpeg", "./bin/ffmpeg", "./ffmpeg.exe", "./bin/ffmpeg.exe"]:
         if os.path.exists(candidate):
             return os.path.abspath(candidate)
@@ -33,6 +57,22 @@ def get_ffmpeg_bin() -> str:
 
 def get_ffprobe_bin() -> Optional[str]:
     """Find FFprobe binary if available."""
+    if getattr(sys, "frozen", False):
+        candidates = []
+        if hasattr(sys, "_MEIPASS"):
+            candidates.extend([
+                os.path.join(sys._MEIPASS, "ffprobe.exe"),
+                os.path.join(sys._MEIPASS, "ffprobe"),
+            ])
+        exe_dir = os.path.dirname(sys.executable)
+        candidates.extend([
+            os.path.join(exe_dir, "ffprobe.exe"),
+            os.path.join(exe_dir, "ffprobe"),
+        ])
+        for cand in candidates:
+            if os.path.exists(cand):
+                return os.path.abspath(cand)
+
     system_bin = shutil.which("ffprobe")
     if system_bin:
         return system_bin

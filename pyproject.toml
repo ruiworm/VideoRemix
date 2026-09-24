@@ -23,6 +23,7 @@ dev = [
 videoremix = "videoremix.cli:main"
 videoremix-gui = "videoremix.ui.app:main"
 videoremix-web = "videoremix.ui.web:main"
+videoremix-launcher = "videoremix.launcher:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
